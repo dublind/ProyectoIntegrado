@@ -12,39 +12,28 @@
 
       <!-- Navegación por Módulos Operativos -->
       <nav class="module-nav">
-        <button 
-          :class="['nav-btn', { active: moduloActivo === 'pedidos' }]" 
-          @click="moduloActivo = 'pedidos'"
-        >
+        <button :class="['nav-btn', { active: moduloActivo === 'pedidos' }]" @click="moduloActivo = 'pedidos'">
           <span class="nav-icon">📋</span>
           <span>Pedidos y ventas</span>
         </button>
 
-        <button 
-          :class="['nav-btn', { active: moduloActivo === 'despacho' }]" 
-          @click="moduloActivo = 'despacho'"
-        >
+        <button :class="['nav-btn', { active: moduloActivo === 'despacho' }]" @click="moduloActivo = 'despacho'">
           <span class="nav-icon">🚚</span>
           <span>Despacho y furgones</span>
           <span v-if="pedidosPorDespacharCount > 0" class="nav-pill">{{ pedidosPorDespacharCount }}</span>
         </button>
 
-        <button 
-          :class="['nav-btn', { active: moduloActivo === 'chofer' }]" 
-          @click="moduloActivo = 'chofer'"
-        >
+        <button :class="['nav-btn', { active: moduloActivo === 'chofer' }]" @click="moduloActivo = 'chofer'">
           <span class="nav-icon">📱</span>
           <span>Terminal de chofer</span>
           <span class="nav-pill-dot" v-if="paradasPendientesChofer > 0"></span>
         </button>
 
-        <button 
-          :class="['nav-btn', { active: moduloActivo === 'bodegas' }]" 
-          @click="moduloActivo = 'bodegas'"
-        >
+        <button :class="['nav-btn', { active: moduloActivo === 'bodegas' }]" @click="moduloActivo = 'bodegas'">
           <span class="nav-icon">🏭</span>
           <span>Bodegas e inventario</span>
-          <span v-if="appStore.state.inventario.rotosBodega > 0" class="nav-pill pill-danger">{{ appStore.state.inventario.rotosBodega }} rotos</span>
+          <span v-if="appStore.state.inventario.rotosBodega > 0" class="nav-pill pill-danger">{{
+            appStore.state.inventario.rotosBodega }} rotos</span>
         </button>
       </nav>
 
@@ -55,7 +44,8 @@
           <span class="stock-dot"></span>
           <span class="stock-label">Stock total:</span>
           <strong>{{ appStore.totalStockContinuo.value }}</strong>
-          <span class="stock-breakdown">({{ appStore.state.inventario.llenosCentral }} llenos • {{ appStore.state.inventario.enTransito }} en ruta)</span>
+          <span class="stock-breakdown">({{ appStore.state.inventario.llenosCentral }} llenos • {{
+            appStore.state.inventario.enTransito }} en ruta)</span>
         </div>
 
         <!-- Usuario Operativo -->
@@ -83,7 +73,7 @@
 
     <!-- CUERPO PRINCIPAL SEGÚN MÓDULO ACTIVO -->
     <main class="main-workspace">
-      
+
       <!-- ========================================== -->
       <!-- MÓDULO 1: PEDIDOS Y VENTAS -->
       <!-- ========================================== -->
@@ -91,7 +81,8 @@
         <div class="section-topbar">
           <div>
             <h1 class="section-title">Recepción y administración de pedidos</h1>
-            <p class="section-desc">Crea pedidos con auto-prellenado, envía enlaces de Webpay o valida transferencias manuales.</p>
+            <p class="section-desc">Crea pedidos con auto-prellenado, envía enlaces de Webpay o valida transferencias
+              manuales.</p>
           </div>
           <button @click="abrirModalNuevoPedido" class="btn btn-primary">
             <span>+</span> Crear pedido (WhatsApp)
@@ -102,19 +93,12 @@
         <div class="filter-bar card">
           <div class="search-input-wrapper">
             <span class="search-icon">🔍</span>
-            <input 
-              v-model="filtroBusqueda" 
-              type="text" 
-              placeholder="Buscar por cliente, teléfono, dirección o código de pedido..." 
-            />
+            <input v-model="filtroBusqueda" type="text"
+              placeholder="Buscar por cliente, teléfono, dirección o código de pedido..." />
           </div>
           <div class="filter-tags">
-            <button 
-              v-for="st in ['todos', 'pendiente_pago', 'pagado', 'en_despacho', 'entregado']"
-              :key="st"
-              :class="['tag-btn', { active: filtroEstado === st }]"
-              @click="filtroEstado = st"
-            >
+            <button v-for="st in ['todos', 'pendiente_pago', 'pagado', 'en_despacho', 'entregado']" :key="st"
+              :class="['tag-btn', { active: filtroEstado === st }]" @click="filtroEstado = st">
               {{ formatEstadoLabel(st) }}
             </button>
           </div>
@@ -158,7 +142,8 @@
                 </td>
                 <td>
                   <div class="cell-stack">
-                    <span class="font-semibold">{{ p.medioPago === 'webpay' ? '💳 Webpay Plus' : '🏦 Transferencia' }}</span>
+                    <span class="font-semibold">{{ p.medioPago === 'webpay' ? '💳 Webpay Plus' : '🏦 Transferencia'
+                      }}</span>
                     <span class="text-xs text-muted">Promesa: {{ p.promesaEntrega }}</span>
                   </div>
                 </td>
@@ -175,30 +160,18 @@
                   <div class="action-buttons">
                     <!-- Si está pendiente de pago -->
                     <template v-if="p.estado === 'pendiente_pago'">
-                      <button 
-                        v-if="p.medioPago === 'webpay'" 
-                        @click="simularWebpay(p)" 
-                        class="btn btn-secondary btn-sm"
-                        title="Simular confirmación de webhook Transbank"
-                      >
+                      <button v-if="p.medioPago === 'webpay'" @click="simularWebpay(p)" class="btn btn-secondary btn-sm"
+                        title="Simular confirmación de webhook Transbank">
                         💳 Pagar Webpay
                       </button>
-                      <button 
-                        v-else 
-                        @click="abrirModalTransferencia(p)" 
-                        class="btn btn-secondary btn-sm"
-                        title="Validar comprobante recibido"
-                      >
+                      <button v-else @click="abrirModalTransferencia(p)" class="btn btn-secondary btn-sm"
+                        title="Validar comprobante recibido">
                         📄 Validar transf.
                       </button>
                     </template>
 
                     <!-- Si está pagado, asignar directamente a despacho -->
-                    <button 
-                      v-if="p.estado === 'pagado'" 
-                      @click="asignarDespacho(p)" 
-                      class="btn btn-primary btn-sm"
-                    >
+                    <button v-if="p.estado === 'pagado'" @click="asignarDespacho(p)" class="btn btn-primary btn-sm">
                       🚚 Asignar a ruta
                     </button>
 
@@ -225,18 +198,16 @@
         <div class="section-topbar">
           <div>
             <h1 class="section-title">Planificación de despacho y furgones</h1>
-            <p class="section-desc">Monitorea la capacidad de carga del furgón (N_max) y asigna pedidos pagados al turno de reparto.</p>
+            <p class="section-desc">Monitorea la capacidad de carga del furgón (N_max) y asigna pedidos pagados al turno
+              de
+              reparto.</p>
           </div>
         </div>
 
         <!-- Tarjetas de Furgones Disponibles -->
         <div class="fleet-grid">
-          <div 
-            v-for="v in appStore.state.vehiculos" 
-            :key="v.id" 
-            class="card fleet-card"
-            :class="{ 'card-active-truck': v.id === appStore.state.turnoActivo.vehiculoId }"
-          >
+          <div v-for="v in appStore.state.vehiculos" :key="v.id" class="card fleet-card"
+            :class="{ 'card-active-truck': v.id === appStore.state.turnoActivo.vehiculoId }">
             <div class="fleet-card-header">
               <span class="truck-icon">🚚</span>
               <div>
@@ -252,20 +223,16 @@
                 <strong>{{ appStore.state.turnoActivo.botellonesCargados }} / {{ v.capacidadMax }} botellones</strong>
               </div>
               <div class="cap-bar">
-                <div 
-                  class="cap-fill" 
-                  :style="{ width: `${Math.min(100, (appStore.state.turnoActivo.botellonesCargados / v.capacidadMax) * 100)}%` }"
-                ></div>
+                <div class="cap-fill"
+                  :style="{ width: `${Math.min(100, (appStore.state.turnoActivo.botellonesCargados / v.capacidadMax) * 100)}%` }">
+                </div>
               </div>
               <span class="cap-sub">Capacidad máxima parametrizable (N_max)</span>
             </div>
 
             <div class="fleet-footer">
               <span>Chofer asignado: <strong>{{ v.choferAsignado }}</strong></span>
-              <button 
-                @click="moduloActivo = 'chofer'" 
-                class="btn btn-secondary btn-sm"
-              >
+              <button @click="moduloActivo = 'chofer'" class="btn btn-secondary btn-sm">
                 Ver terminal en ruta &rarr;
               </button>
             </div>
@@ -300,7 +267,9 @@
         <div class="section-topbar">
           <div>
             <h1 class="section-title">Terminal móvil de reparto (chofer)</h1>
-            <p class="section-desc">Hoja de ruta interactiva en terreno con orden geográfico, check de entrega en 1 toque y excepciones de envases.</p>
+            <p class="section-desc">Hoja de ruta interactiva en terreno con orden geográfico, check de entrega en 1
+              toque y
+              excepciones de envases.</p>
           </div>
           <div class="chofer-top-controls">
             <button @click="toggleOffline" class="btn btn-secondary btn-sm">
@@ -316,7 +285,8 @@
             <div class="phone-topbar">
               <div class="p-status">
                 <span :class="['dot-indicator', { 'dot-offline': appStore.state.modoOffline }]"></span>
-                <span>{{ appStore.state.modoOffline ? 'Modo offline (almacenamiento local)' : 'Online (conectado)' }}</span>
+                <span>{{ appStore.state.modoOffline ? 'Modo offline (almacenamiento local)' : 'Online (conectado)'
+                  }}</span>
               </div>
               <span class="badge badge-primary">Turno {{ appStore.state.turnoActivo.turno }}</span>
             </div>
@@ -347,15 +317,11 @@
               </div>
 
               <div class="stops-cards">
-                <div 
-                  v-for="(parada, idx) in paradasOrdenadas" 
-                  :key="parada.id"
-                  :class="['stop-item-card', { 
-                    'is-current': idx === paradaActivaIndex && parada.estado === 'en_despacho', 
-                    'is-delivered': parada.estado === 'entregado' || parada.estado === 'parcial',
-                    'is-absent': parada.estado === 'ausente'
-                  }]"
-                >
+                <div v-for="(parada, idx) in paradasOrdenadas" :key="parada.id" :class="['stop-item-card', {
+                  'is-current': idx === paradaActivaIndex && parada.estado === 'en_despacho',
+                  'is-delivered': parada.estado === 'entregado' || parada.estado === 'parcial',
+                  'is-absent': parada.estado === 'ausente'
+                }]">
                   <div class="stop-head">
                     <span class="stop-seq">Parada #{{ idx + 1 }}</span>
                     <span :class="['badge', getBadgeStopClass(parada.estado)]">
@@ -368,12 +334,15 @@
 
                   <div class="stop-chips">
                     <span class="chip-bidones">💧 {{ parada.cantidadBidones }} botellones</span>
-                    <span class="chip-paid">{{ parada.medioPago === 'webpay' ? '✅ Pagado Webpay' : '✅ Pagado transf.' }}</span>
+                    <span class="chip-paid">{{ parada.medioPago === 'webpay' ? '✅ Pagado Webpay' : '✅ Pagado transf.'
+                      }}</span>
                   </div>
 
                   <!-- Alerta si adeuda envase de despacho anterior -->
                   <div v-if="parada.tieneAlertaDeuda && parada.estado === 'en_despacho'" class="debt-box-driver">
-                    ⚠️ <strong>Retiro pendiente anterior:</strong> Cliente debe entregar {{ parada.deudaEnvasesPendiente }} envase(s) vacío(s).
+                    ⚠️ <strong>Retiro pendiente anterior:</strong> Cliente debe entregar {{ parada.deudaEnvasesPendiente
+                    }}
+                    envase(s) vacío(s).
                   </div>
 
                   <!-- Acciones de Entrega en 1 Toque -->
@@ -385,7 +354,8 @@
                       <button @click="abrirModalIncidencia(parada)" class="btn btn-secondary btn-touch-sub">
                         ⚠️ Reportar excepción
                       </button>
-                      <a :href="`https://maps.google.com/?q=${encodeURIComponent(parada.direccion + ' ' + parada.comuna)}`" target="_blank" class="btn btn-secondary btn-touch-sub">
+                      <a :href="`https://maps.google.com/?q=${encodeURIComponent(parada.direccion + ' ' + parada.comuna)}`"
+                        target="_blank" class="btn btn-secondary btn-touch-sub">
                         🗺️ Navegar
                       </a>
                     </div>
@@ -414,77 +384,160 @@
         <div class="section-topbar">
           <div>
             <h1 class="section-title">Control de bodegas y cuadratura continua</h1>
-            <p class="section-desc">Gestión de inventario físico y lógico bajo la máquina de estados finitos (FSM) y supervisión de cuentas bancarias.</p>
+            <p class="section-desc">Gestión de inventario físico y lógico bajo la máquina de estados finitos (FSM) y
+              supervisión de cuentas bancarias.</p>
+          </div>
+          <div class="top-section-actions">
+            <button @click="appStore.sincronizarInventario()" class="btn btn-secondary btn-sm">
+              🔄 Sincronizar cuadratura
+            </button>
+            <button @click="appStore.resetDemoData()" class="btn btn-secondary btn-sm">
+              ↺ Restablecer datos demo
+            </button>
           </div>
         </div>
 
-        <!-- Balance Continuo Cards -->
+        <!-- Balance Continuo Cards (Con hover explícito y padding amplio) -->
         <div class="inventory-grid">
-          <div class="card inv-card">
+          <div class="card inv-card" title="Botellones llenos sanitizados en bodega central">
             <span class="inv-title">Bodega central (llenos)</span>
-            <div class="inv-val text-primary">{{ appStore.state.inventario.llenosCentral }} <span class="unit">unid.</span></div>
+            <div class="inv-val text-primary">{{ appStore.state.inventario.llenosCentral }} <span
+                class="unit">unid.</span>
+            </div>
             <span class="inv-sub">Sanitizados y sellados para despacho</span>
           </div>
 
-          <div class="card inv-card">
+          <div class="card inv-card" title="Botellones vacíos disponibles para lavado y rellenado">
             <span class="inv-title">Bodega central (vacíos)</span>
-            <div class="inv-val text-success">{{ appStore.state.inventario.vaciosCentral }} <span class="unit">unid.</span></div>
+            <div class="inv-val text-success">{{ appStore.state.inventario.vaciosCentral }} <span
+                class="unit">unid.</span>
+            </div>
             <span class="inv-sub">Disponibles para lavado y rellenado</span>
           </div>
 
-          <div class="card inv-card">
+          <div class="card inv-card" title="Botellones a bordo del furgón de Pedro Chofer">
             <span class="inv-title">En tránsito (furgón)</span>
-            <div class="inv-val text-primary">{{ appStore.state.inventario.enTransito }} <span class="unit">unid.</span></div>
+            <div class="inv-val text-primary">{{ appStore.state.inventario.enTransito }} <span class="unit">unid.</span>
+            </div>
             <span class="inv-sub">A bordo del vehículo de reparto</span>
           </div>
 
-          <div class="card inv-card" :class="{ 'inv-alert': appStore.state.inventario.pendientesDevolucion > 0 }">
+          <div class="card inv-card" :class="{ 'inv-alert': appStore.state.inventario.pendientesDevolucion > 0 }"
+            title="Botellones adeudados por clientes en pedidos anteriores">
             <span class="inv-title">Pendientes (deuda clientes)</span>
-            <div class="inv-val text-warning">{{ appStore.state.inventario.pendientesDevolucion }} <span class="unit">unid.</span></div>
+            <div class="inv-val text-warning">{{ appStore.state.inventario.pendientesDevolucion }} <span
+                class="unit">unid.</span></div>
             <span class="inv-sub">Auto-programados para retiro en próximo pedido</span>
           </div>
 
-          <div class="card inv-card" :class="{ 'inv-danger': appStore.state.inventario.rotosBodega > 0 }">
+          <div class="card inv-card" :class="{ 'inv-danger': appStore.state.inventario.rotosBodega > 0 }"
+            title="Botellones rotos o fisurados que requieren baja física de Erick">
             <span class="inv-title">Bodega de rotos (mermas)</span>
-            <div class="inv-val text-danger">{{ appStore.state.inventario.rotosBodega }} <span class="unit">unid.</span></div>
+            <div class="inv-val text-danger">{{ appStore.state.inventario.rotosBodega }} <span class="unit">unid.</span>
+            </div>
             <div class="inv-action">
               <span>Baja física autorizada solo por Erick</span>
-              <button 
-                v-if="appStore.state.inventario.rotosBodega > 0" 
-                @click="autorizarBajaRoto" 
-                class="btn btn-secondary btn-sm mt-2"
-              >
+              <button v-if="appStore.state.inventario.rotosBodega > 0" @click="autorizarBajaRoto"
+                class="btn btn-secondary btn-sm mt-2">
                 Autorizar baja física
               </button>
             </div>
           </div>
         </div>
 
+        <!-- Barra de Auditoría de Sincronización en Tiempo Real entre Módulos -->
+        <div class="card sync-audit-card">
+          <div class="sync-card-head">
+            <div class="sync-title-block">
+              <span class="badge badge-primary">Sincronización operacional activa</span>
+              <h3 class="sync-heading">Ecuación continua de stock sincronizada en tiempo real</h3>
+              <p class="text-sm text-muted">
+                Cuadratura verificada: Bodega central ({{ appStore.state.inventario.llenosCentral }} llenos + {{
+                  appStore.state.inventario.vaciosCentral }} vacíos) + Furgón en ruta ({{
+                  appStore.state.inventario.enTransito
+                }}) + Clientes deudores ({{ appStore.state.inventario.pendientesDevolucion }}) + Mermas ({{
+                  appStore.state.inventario.rotosBodega }}).
+              </p>
+            </div>
+          </div>
+
+          <!-- Desglose de la ecuación matemática continua -->
+          <div class="equation-strip">
+            <div class="eq-item">
+              <span class="eq-num text-primary">{{ appStore.state.inventario.llenosCentral }}</span>
+              <span class="eq-lbl">Llenos central</span>
+            </div>
+            <span class="eq-op">+</span>
+            <div class="eq-item">
+              <span class="eq-num text-success">{{ appStore.state.inventario.vaciosCentral }}</span>
+              <span class="eq-lbl">Vacíos central</span>
+            </div>
+            <span class="eq-op">+</span>
+            <div class="eq-item" title="Sincronizado con Despacho y Chofer">
+              <span class="eq-num text-primary">{{ appStore.state.inventario.enTransito }}</span>
+              <span class="eq-lbl">En furgón (ruta)</span>
+            </div>
+            <span class="eq-op">+</span>
+            <div class="eq-item" title="Sincronizado con Ficha Clientes y Pedidos">
+              <span class="eq-num text-warning">{{ appStore.state.inventario.pendientesDevolucion }}</span>
+              <span class="eq-lbl">Deuda clientes</span>
+            </div>
+            <span class="eq-op">+</span>
+            <div class="eq-item">
+              <span class="eq-num text-danger">{{ appStore.state.inventario.rotosBodega }}</span>
+              <span class="eq-lbl">Rotos (mermas)</span>
+            </div>
+            <span class="eq-op">=</span>
+            <div class="eq-total">
+              <span class="eq-num font-mono">{{ appStore.totalStockContinuo.value }}</span>
+              <span class="eq-lbl">Stock total continuo</span>
+            </div>
+          </div>
+
+          <!-- Operaciones Físicas de Planta y Retorno -->
+          <div class="sync-quick-ops">
+            <div class="op-desc">
+              <strong>Control de flujo físico:</strong>
+              <span>Al terminar la ruta, descarga los vacíos recolectados a bodega central o recarga en planta.</span>
+            </div>
+            <div class="op-btns">
+              <button v-if="appStore.state.inventario.enTransito > 0" @click="liquidarFurgon"
+                class="btn btn-success btn-sm">
+                📥 Liquidar retorno de furgón (descargar vacíos a bodega central)
+              </button>
+              <button v-if="appStore.state.inventario.vaciosCentral >= 10" @click="appStore.sanitizarYRecargar(10)"
+                class="btn btn-secondary btn-sm">
+                💧 Sanitizar y rellenar 10 vacíos en planta
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- Módulo de Cuentas Bancarias y Regla de 45 Comprobantes -->
-        <div class="card bank-accounts-card mt-6">
+        <div class="card bank-accounts-card">
           <div class="bank-card-head">
             <div>
               <h3>Gestión de cuentas bancarias de transferencias</h3>
               <p class="text-sm text-muted">
-                Algoritmo de rotación automática: al acumular <strong>45 comprobantes procesados</strong>, el sistema conmuta automáticamente a la siguiente cuenta para evitar bloqueos operativos.
+                Algoritmo de rotación automática: al acumular <strong>45 comprobantes procesados</strong>, el sistema
+                conmuta
+                automáticamente a la siguiente cuenta para evitar bloqueos operativos.
               </p>
             </div>
             <span class="badge badge-primary">Regla activa</span>
           </div>
 
           <div class="accounts-list">
-            <div 
-              v-for="cta in appStore.state.cuentasBancarias" 
-              :key="cta.id"
-              :class="['account-row', { 'is-active-account': cta.activa }]"
-            >
+            <div v-for="cta in appStore.state.cuentasBancarias" :key="cta.id"
+              :class="['account-row', { 'is-active-account': cta.activa }]">
               <div class="acc-info">
                 <div class="acc-title-line">
                   <strong>{{ cta.banco }}</strong>
                   <span v-if="cta.activa" class="badge badge-success">Cuenta activa</span>
                   <span v-else class="badge badge-neutral">En espera</span>
                 </div>
-                <span class="text-sm font-mono">{{ cta.tipoCuenta }} • {{ cta.numeroCuenta }} (RUT: {{ cta.rut }})</span>
+                <span class="text-sm font-mono">{{ cta.tipoCuenta }} • {{ cta.numeroCuenta }} (RUT: {{ cta.rut
+                  }})</span>
               </div>
 
               <!-- Barra de progreso de los 45 vouchers -->
@@ -494,10 +547,7 @@
                   <strong>{{ cta.comprobantesProcesados }} / 45</strong>
                 </div>
                 <div class="counter-bar">
-                  <div 
-                    class="counter-fill" 
-                    :style="{ width: `${(cta.comprobantesProcesados / 45) * 100}%` }"
-                  ></div>
+                  <div class="counter-fill" :style="{ width: `${(cta.comprobantesProcesados / 45) * 100}%` }"></div>
                 </div>
               </div>
             </div>
@@ -534,7 +584,8 @@
             <div class="warn-icon">⚠️</div>
             <div>
               <strong>Alerta de botellones pendientes:</strong>
-              <p>Este cliente adeuda <strong>{{ deudaClienteDetectada }} botellón(es)</strong> no retornados de entregas previas. Recuerda coordinar por WhatsApp el retorno antes de entregar el nuevo pedido.</p>
+              <p>Este cliente adeuda <strong>{{ deudaClienteDetectada }} botellón(es)</strong> no retornados de entregas
+                previas. Recuerda coordinar por WhatsApp el retorno antes de entregar el nuevo pedido.</p>
             </div>
           </div>
 
@@ -596,12 +647,14 @@
         </div>
         <div class="modal-body">
           <p class="mb-4">
-            Pedido: <strong>{{ modalTransferenciaPedido.codigo }}</strong> • Monto: <strong>${{ modalTransferenciaPedido.total.toLocaleString('es-CL') }}</strong>
+            Pedido: <strong>{{ modalTransferenciaPedido.codigo }}</strong> • Monto: <strong>${{
+              modalTransferenciaPedido.total.toLocaleString('es-CL') }}</strong>
           </p>
           <div class="current-bank-box mb-4">
             <span class="label">Cuenta de abono activa:</span>
             <strong>{{ appStore.cuentaActiva.value.banco }} ({{ appStore.cuentaActiva.value.numeroCuenta }})</strong>
-            <p class="text-xs text-muted">Contador actual: {{ appStore.cuentaActiva.value.comprobantesProcesados }}/45 transferencias</p>
+            <p class="text-xs text-muted">Contador actual: {{ appStore.cuentaActiva.value.comprobantesProcesados }}/45
+              transferencias</p>
           </div>
           <div class="form-group mb-4">
             <label>Subir o confirmar comprobante:</label>
@@ -667,17 +720,21 @@
         <div class="modal-body">
           <div class="detail-row"><strong>Cliente:</strong> {{ pedidoDetalle.clienteNombre }}</div>
           <div class="detail-row"><strong>Teléfono:</strong> {{ pedidoDetalle.telefono }}</div>
-          <div class="detail-row"><strong>Dirección:</strong> {{ pedidoDetalle.direccion }}, {{ pedidoDetalle.comuna }}</div>
+          <div class="detail-row"><strong>Dirección:</strong> {{ pedidoDetalle.direccion }}, {{ pedidoDetalle.comuna }}
+          </div>
           <div class="detail-row"><strong>Cantidad:</strong> {{ pedidoDetalle.cantidadBidones }} botellones (20L)</div>
           <div class="detail-row"><strong>Total:</strong> ${{ pedidoDetalle.total.toLocaleString('es-CL') }}</div>
           <div class="detail-row"><strong>Estado:</strong> {{ formatEstado(pedidoDetalle.estado) }}</div>
           <div class="detail-row"><strong>Medio de pago:</strong> {{ pedidoDetalle.medioPago }}</div>
           <div class="detail-row" v-if="pedidoDetalle.linkWebpay">
-            <strong>Link Webpay:</strong> <a :href="pedidoDetalle.linkWebpay" target="_blank">{{ pedidoDetalle.linkWebpay }}</a>
+            <strong>Link Webpay:</strong> <a :href="pedidoDetalle.linkWebpay" target="_blank">{{
+              pedidoDetalle.linkWebpay
+              }}</a>
           </div>
           <div class="detail-row" v-if="pedidoDetalle.incidencia">
-            <strong>Incidencia registrada:</strong> 
-            <span class="badge badge-danger">{{ pedidoDetalle.incidencia.tipo }}: {{ pedidoDetalle.incidencia.detalle }}</span>
+            <strong>Incidencia registrada:</strong>
+            <span class="badge badge-danger">{{ pedidoDetalle.incidencia.tipo }}: {{ pedidoDetalle.incidencia.detalle
+              }}</span>
           </div>
         </div>
         <div class="modal-footer">
@@ -704,7 +761,7 @@ const usuarioActual = computed(() => {
   } else if (moduloActivo.value === 'bodegas') {
     return { nombre: 'Erick Operaciones', rol: 'Administrador / Dueño', avatar: '👔' };
   }
-  return { nombre: 'Fabián Jeldes', rol: 'Secretaría / Ventas', avatar: 'FO' };
+  return { nombre: '', rol: 'Secretaría / Ventas', avatar: 'X' };
 });
 
 // Filtros de Pedidos
@@ -715,7 +772,7 @@ const pedidosFiltrados = computed(() => {
   return appStore.state.pedidos.filter(p => {
     const matchFiltro = filtroEstado.value === 'todos' || p.estado === filtroEstado.value;
     const q = filtroBusqueda.value.toLowerCase().trim();
-    const matchQuery = !q || 
+    const matchQuery = !q ||
       p.codigo.toLowerCase().includes(q) ||
       p.clienteNombre.toLowerCase().includes(q) ||
       p.telefono.includes(q) ||
@@ -927,6 +984,10 @@ function ejecutarIncidencia(tipo: 'pendiente' | 'ausente' | 'roto') {
   modalIncidenciaPedido.value = null;
 }
 
+function liquidarFurgon() {
+  appStore.liquidarRetornoFurgonCentral();
+}
+
 function autorizarBajaRoto() {
   if (confirm('¿Confirmar inspección física y autorizar baja definitiva de 1 botellón inservible?')) {
     appStore.autorizarBajaRotoAdmin(1);
@@ -948,215 +1009,290 @@ function toggleOffline() {
   display: flex;
   flex-direction: column;
   background-color: var(--bg-main);
+  font-family: var(--font-body);
 }
 
-/* App Header Principal */
+/* ==========================================================================
+   APP HEADER PRINCIPAL
+   ========================================================================== */
 .app-header {
-  background: #ffffff;
-  border-bottom: 1px solid var(--border);
-  padding: 12px 24px;
+  background: var(--zun-blanco);
+  border-bottom: 1px solid var(--zun-border);
+  padding: 14px 32px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 24px;
   position: sticky;
   top: 0;
   z-index: 100;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
 .header-brand-section {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
 }
+
 .brand-logo {
-  font-size: 1.8rem;
+  font-size: 2rem;
+  line-height: 1;
 }
+
 .brand-text {
   display: flex;
   flex-direction: column;
 }
+
 .brand-title {
-  font-size: 1.05rem;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
   font-weight: 800;
-  color: #0f172a;
-  line-height: 1.2;
+  color: var(--zun-negro);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
 }
+
 .brand-sub {
-  font-size: 0.72rem;
-  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  color: var(--zun-gris);
   font-weight: 500;
 }
 
-/* Navegación por Módulos */
+/* Navegación por Módulos (Pills interactivos Revista ZUN con hover firme) */
 .module-nav {
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: #f1f5f9;
-  padding: 4px;
-  border-radius: var(--radius-sm);
+  gap: 8px;
+  background: var(--zun-blanco-sutil);
+  padding: 6px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--zun-border);
 }
 
 .nav-btn {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 14px;
-  font-size: 0.86rem;
+  padding: 8px 18px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
   font-weight: 600;
-  color: #475569;
-  border-radius: 6px;
+  letter-spacing: 0.04em;
+  color: var(--zun-gris);
+  border-radius: var(--radius-pill);
   position: relative;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  border: 1px solid transparent;
+  cursor: pointer !important;
 }
+
 .nav-btn:hover {
-  color: var(--text-main);
+  color: var(--zun-rojo) !important;
+  border-color: var(--zun-rojo) !important;
+  background: #ffffff !important;
+  box-shadow: 2px 2px 0px var(--zun-rojo) !important;
+  transform: translate(-1px, -1px) !important;
 }
+
 .nav-btn.active {
-  background: #ffffff;
-  color: var(--primary);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  background: var(--zun-negro) !important;
+  color: #ffffff !important;
+  border-color: var(--zun-negro) !important;
 }
+
+.nav-btn.active:hover {
+  border-color: var(--zun-rojo) !important;
+  box-shadow: 3px 3px 0px var(--zun-rojo) !important;
+  transform: translate(-2px, -2px) !important;
+}
+
 .nav-icon {
-  font-size: 1rem;
+  font-size: 1.05rem;
 }
 
 .nav-pill {
-  background: var(--primary);
+  background: var(--zun-rojo);
   color: #ffffff;
+  font-family: var(--font-mono);
   font-size: 0.68rem;
-  font-weight: 800;
-  padding: 2px 6px;
-  border-radius: 9999px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
 }
+
 .nav-pill.pill-danger {
-  background: var(--danger);
+  background: var(--zun-rojo);
 }
+
 .nav-pill-dot {
-  width: 7px;
-  height: 7px;
-  background: var(--success);
+  width: 8px;
+  height: 8px;
+  background: var(--zun-verde);
   border-radius: 50%;
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 18px;
 }
 
 .stock-pill {
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  padding: 6px 12px;
-  border-radius: 9999px;
-  font-size: 0.76rem;
-  color: #334155;
+  gap: 8px;
+  background: var(--zun-blanco);
+  border: 1px solid var(--zun-border);
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--zun-text);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+.stock-pill:hover {
+  border-color: var(--zun-rojo);
+  box-shadow: 2px 2px 0px var(--zun-rojo);
+  transform: translate(-1px, -1px);
+}
+
 .stock-dot {
-  width: 8px;
-  height: 8px;
-  background: var(--success);
+  width: 9px;
+  height: 9px;
+  background: var(--zun-verde);
   border-radius: 50%;
 }
+
+.stock-pill strong {
+  color: var(--zun-negro);
+  font-weight: 700;
+}
+
 .stock-breakdown {
-  color: var(--text-muted);
-  font-size: 0.72rem;
+  color: var(--zun-gris);
+  font-size: 0.74rem;
 }
 
 .profile-chip {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
+
 .profile-avatar {
-  width: 34px;
-  height: 34px;
-  background: #0284c7;
+  width: 36px;
+  height: 36px;
+  background: var(--zun-negro);
   color: #ffffff;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 800;
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.9rem;
+  border: 1px solid var(--zun-negro);
 }
+
 .profile-info {
   display: flex;
   flex-direction: column;
 }
+
 .profile-name {
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-.profile-role {
-  font-size: 0.7rem;
-  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--zun-negro);
 }
 
-/* Alerta Global Banner */
+.profile-role {
+  font-size: 0.72rem;
+  color: var(--zun-gris);
+}
+
+/* Alerta Global Banner (Regla de 45 cuentas) */
 .alert-banner {
-  background: #fef3c7;
-  border-bottom: 1px solid #f59e0b;
-  padding: 10px 24px;
+  background: var(--zun-ambar-light);
+  border-bottom: 1px solid var(--zun-ambar);
+  padding: 12px 28px;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
+
 .alert-content {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 0.86rem;
+  gap: 14px;
+  font-size: 0.88rem;
   color: #78350f;
 }
-.alert-icon { font-size: 1.3rem; }
-.btn-close-banner {
-  font-size: 1.3rem;
-  color: #b45309;
+
+.alert-icon {
+  font-size: 1.4rem;
 }
 
-/* Workspace Principal */
+.btn-close-banner {
+  font-size: 1.4rem;
+  color: #b45309;
+  cursor: pointer;
+}
+
+/* ==========================================================================
+   WORKSPACE PRINCIPAL (ESPACIADO Y RITMO EDITORIAL)
+   ========================================================================== */
 .main-workspace {
   flex-grow: 1;
-  max-width: 1300px;
+  max-width: 1340px;
   width: 100%;
   margin: 0 auto;
-  padding: 24px;
+  padding: 32px 28px;
 }
 
 .section-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 20px;
+  margin-bottom: 26px;
   flex-wrap: wrap;
-  gap: 12px;
-}
-.section-title {
-  font-size: 1.5rem;
-  font-weight: 800;
-  color: #0f172a;
-}
-.section-desc {
-  font-size: 0.88rem;
-  color: var(--text-muted);
-  margin-top: 2px;
+  gap: 16px;
 }
 
-/* Filtros */
+.section-title {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--zun-negro);
+  letter-spacing: -0.02em;
+}
+
+.section-desc {
+  font-size: 0.92rem;
+  color: var(--zun-gris);
+  margin-top: 4px;
+}
+
+.top-section-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* Filtros y Búsqueda */
 .filter-bar {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-bottom: 20px;
-  padding: 14px;
+  gap: 16px;
+  margin-bottom: 26px;
+  padding: 18px 24px;
   flex-wrap: wrap;
 }
+
 .search-input-wrapper {
   flex-grow: 1;
   min-width: 280px;
@@ -1164,568 +1300,948 @@ function toggleOffline() {
   display: flex;
   align-items: center;
 }
+
 .search-input-wrapper .search-icon {
   position: absolute;
-  left: 12px;
-  color: #94a3b8;
+  left: 14px;
+  color: var(--zun-gris);
 }
+
 .search-input-wrapper input {
   width: 100%;
-  padding-left: 38px;
+  padding-left: 42px;
 }
 
 .filter-tags {
   display: flex;
-  gap: 6px;
-  background: #f1f5f9;
-  padding: 4px;
-  border-radius: var(--radius-sm);
-}
-.tag-btn {
-  padding: 6px 12px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #64748b;
-  border-radius: 6px;
-}
-.tag-btn.active {
-  background: #ffffff;
-  color: var(--primary);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  gap: 8px;
+  background: var(--zun-blanco-sutil);
+  padding: 5px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--zun-border);
 }
 
-/* Data Table */
+.tag-btn {
+  padding: 7px 16px;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--zun-gris);
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  cursor: pointer !important;
+}
+
+.tag-btn:hover {
+  color: var(--zun-rojo) !important;
+  border-color: var(--zun-rojo) !important;
+  background: #ffffff !important;
+}
+
+.tag-btn.active {
+  background: var(--zun-negro) !important;
+  color: #ffffff !important;
+  border-color: var(--zun-negro) !important;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Data Table Editorial con Hover Vivo */
 .table-card {
   padding: 0;
   overflow: hidden;
+  margin-bottom: 28px;
 }
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
 }
+
 .data-table th {
-  background: #f8fafc;
-  padding: 12px 16px;
+  background: var(--zun-blanco-sutil);
+  padding: 16px 22px;
   text-align: left;
+  font-family: var(--font-mono);
   font-size: 0.74rem;
   font-weight: 700;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
+  color: var(--zun-gris);
+  border-bottom: 1px solid var(--zun-border);
 }
+
 .data-table td {
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.88rem;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--zun-border);
+  font-size: 0.9rem;
   vertical-align: middle;
+  color: var(--zun-text);
+  transition: background-color 0.15s ease;
 }
+
+.data-table tr {
+  cursor: pointer;
+}
+
 .data-table tr:hover td {
-  background-color: #f8fafc;
+  background-color: var(--zun-blanco-sutil) !important;
 }
+
+.data-table tr:hover td:first-child {
+  border-left: 3px solid var(--zun-rojo) !important;
+}
+
 .data-table tr.row-warning td {
-  background-color: #fffbeb;
+  background-color: var(--zun-ambar-light);
 }
 
 .cell-stack {
   display: flex;
   flex-direction: column;
+  gap: 3px;
 }
+
 .comuna-pill {
-  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
   font-weight: 600;
-  color: var(--primary);
+  color: var(--zun-gris-dark);
+  background: var(--zun-blanco-sutil);
+  border: 1px solid var(--zun-border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  display: inline-block;
+  margin-top: 2px;
+  width: fit-content;
 }
+
 .action-buttons {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
+
 .empty-state {
   text-align: center;
-  padding: 40px !important;
-  color: var(--text-muted);
+  padding: 48px !important;
+  color: var(--zun-gris);
 }
+
 .block-mt {
-  margin-top: 4px;
+  margin-top: 6px;
   display: inline-block;
 }
 
-/* Módulo Despacho */
+/* ==========================================================================
+   MÓDULO DESPACHO Y FURGONES
+   ========================================================================== */
 .fleet-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 18px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 24px;
+  margin-bottom: 28px;
 }
+
 .fleet-card {
-  padding: 20px;
+  padding: 26px 28px;
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
+
+.fleet-card:hover {
+  border-color: var(--zun-rojo) !important;
+  box-shadow: 4px 4px 0px var(--zun-rojo) !important;
+  transform: translate(-2px, -2px) !important;
+}
+
 .card-active-truck {
-  border-color: var(--primary);
-  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.12);
+  border: 2px solid var(--zun-negro);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
 }
+
 .fleet-card-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 14px;
+  margin-bottom: 18px;
 }
-.truck-icon { font-size: 2rem; }
-.fleet-title { font-size: 1.05rem; font-weight: 800; color: #0f172a; }
-.fleet-plate { font-size: 0.8rem; color: var(--text-muted); }
+
+.truck-icon {
+  font-size: 2.2rem;
+}
+
+.fleet-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--zun-negro);
+}
+
+.fleet-plate {
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  color: var(--zun-gris);
+}
 
 .fleet-capacity-section {
-  background: #f8fafc;
+  background: var(--zun-blanco-sutil);
+  border: 1px solid var(--zun-border);
   border-radius: var(--radius-sm);
-  padding: 14px;
-  margin-bottom: 16px;
+  padding: 16px 18px;
+  margin-bottom: 18px;
 }
+
 .cap-header {
   display: flex;
   justify-content: space-between;
-  font-size: 0.85rem;
-  margin-bottom: 8px;
+  font-size: 0.88rem;
+  margin-bottom: 10px;
 }
+
 .cap-bar {
   height: 8px;
-  background: #e2e8f0;
+  background: var(--zun-border);
   border-radius: 9999px;
   overflow: hidden;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
+
 .cap-fill {
   height: 100%;
-  background: var(--primary);
+  background: var(--zun-negro);
   border-radius: 9999px;
   transition: width 0.3s;
 }
+
 .cap-sub {
-  font-size: 0.72rem;
-  color: var(--text-muted);
+  font-size: 0.74rem;
+  color: var(--zun-gris);
 }
+
 .fleet-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 0.85rem;
+  font-size: 0.88rem;
+  padding-top: 6px;
 }
 
 .dispatch-queue-card {
-  padding: 20px;
+  padding: 28px;
+  margin-bottom: 28px;
 }
+
 .queue-title {
-  font-size: 1.05rem;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
   font-weight: 800;
-  margin-bottom: 16px;
+  color: var(--zun-negro);
+  margin-bottom: 18px;
 }
+
 .empty-box {
-  padding: 24px;
-  background: #f8fafc;
+  padding: 28px;
+  background: var(--zun-blanco-sutil);
+  border: 1px solid var(--zun-border);
   border-radius: var(--radius-sm);
   text-align: center;
-  color: #475569;
-  font-size: 0.9rem;
+  color: var(--zun-gris);
+  font-size: 0.92rem;
 }
+
 .queue-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
+
 .queue-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  background: #f8fafc;
-  border: 1px solid var(--border);
+  padding: 16px 20px;
+  background: var(--zun-blanco-sutil);
+  border: 1px solid var(--zun-border);
   border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
+
+.queue-item:hover {
+  border-color: var(--zun-rojo) !important;
+  box-shadow: 2px 2px 0px var(--zun-rojo) !important;
+  transform: translate(-1px, -1px) !important;
+  background: #ffffff !important;
+}
+
 .q-left {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 0.88rem;
+  gap: 14px;
+  font-size: 0.9rem;
 }
 
-/* Módulo Chofer Terminal Móvil */
+/* ==========================================================================
+   MÓDULO CHOFER TERMINAL MÓVIL (PWA)
+   ========================================================================== */
 .mobile-terminal-wrapper {
   display: flex;
   justify-content: center;
-  padding: 10px 0 30px;
+  padding: 10px 0 40px;
 }
+
 .terminal-phone {
-  max-width: 440px;
+  max-width: 460px;
   width: 100%;
-  background: #ffffff;
-  border: 4px solid #1e293b;
-  border-radius: 28px;
+  background: var(--zun-blanco);
+  border: 4px solid var(--zun-negro);
+  border-radius: 32px;
   overflow: hidden;
-  box-shadow: 0 20px 45px rgba(0,0,0,0.15);
+  box-shadow: 0 24px 50px -10px rgba(0, 0, 0, 0.22);
   display: flex;
   flex-direction: column;
 }
 
 .phone-topbar {
-  background: #f8fafc;
-  border-bottom: 1px solid var(--border);
-  padding: 12px 16px;
+  background: var(--zun-blanco-sutil);
+  border-bottom: 1px solid var(--zun-border);
+  padding: 14px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  font-family: var(--font-mono);
 }
+
 .p-status {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.72rem;
+  gap: 8px;
+  font-size: 0.74rem;
   font-weight: 700;
-  color: var(--success);
+  color: #065f46;
 }
+
 .dot-indicator {
-  width: 7px;
-  height: 7px;
-  background: currentColor;
+  width: 8px;
+  height: 8px;
+  background: var(--zun-verde);
   border-radius: 50%;
 }
-.dot-offline { color: #d97706; }
+
+.dot-offline {
+  background: var(--zun-ambar);
+}
 
 .driver-cargo-bar {
   display: flex;
   align-items: center;
   justify-content: space-around;
-  padding: 14px 10px;
-  border-bottom: 1px solid var(--border);
-  background: #ffffff;
+  padding: 18px 14px;
+  border-bottom: 1px solid var(--zun-border);
+  background: var(--zun-blanco);
 }
+
 .cargo-col {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
 }
+
 .c-val {
-  font-size: 1.3rem;
+  font-family: var(--font-mono);
+  font-size: 1.45rem;
   font-weight: 800;
   line-height: 1.1;
+  color: var(--zun-negro);
 }
+
 .c-lbl {
-  font-size: 0.68rem;
-  color: var(--text-muted);
+  font-size: 0.7rem;
+  color: var(--zun-gris);
   font-weight: 600;
+  margin-top: 4px;
 }
+
 .cargo-divider {
   width: 1px;
-  height: 24px;
-  background: var(--border);
+  height: 28px;
+  background: var(--zun-border);
 }
 
 .stops-scroll-area {
-  padding: 16px;
-  background: #f8fafc;
-  max-height: 600px;
+  padding: 20px;
+  background: var(--zun-blanco-cielo);
+  max-height: 620px;
   overflow-y: auto;
 }
+
 .stops-meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
+
 .stops-meta h2 {
-  font-size: 0.95rem;
+  font-family: var(--font-display);
+  font-size: 1rem;
   font-weight: 800;
+  color: var(--zun-negro);
 }
+
 .stops-meta span {
-  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
   font-weight: 700;
-  color: var(--primary);
+  color: var(--zun-negro);
 }
 
 .stops-cards {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
+
 .stop-item-card {
-  background: #ffffff;
-  border: 1px solid var(--border);
+  background: var(--zun-blanco);
+  border: 1px solid var(--zun-border);
   border-radius: var(--radius-md);
-  padding: 14px;
-  transition: all 0.2s;
+  padding: 18px 20px;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
 }
+
+.stop-item-card:hover {
+  border-color: var(--zun-rojo) !important;
+  box-shadow: 3px 3px 0px var(--zun-rojo) !important;
+  transform: translate(-2px, -2px) !important;
+}
+
 .stop-item-card.is-current {
-  border-color: var(--primary);
-  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.12);
+  border: 2px solid var(--zun-negro);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
 }
+
 .stop-item-card.is-delivered {
-  opacity: 0.75;
-  background: #fcfcfc;
+  opacity: 0.72;
+  background: var(--zun-blanco-sutil);
 }
 
 .stop-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
-}
-.stop-seq {
-  font-size: 0.72rem;
-  font-weight: 800;
-  color: var(--text-muted);
-}
-.stop-client {
-  font-size: 1rem;
-  font-weight: 800;
-  color: #0f172a;
-}
-.stop-address {
-  font-size: 0.82rem;
-  color: #475569;
   margin-bottom: 8px;
 }
-.stop-chips {
-  display: flex;
-  gap: 8px;
+
+.stop-seq {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--zun-gris);
+}
+
+.stop-client {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--zun-negro);
+  margin-bottom: 2px;
+}
+
+.stop-address {
+  font-size: 0.85rem;
+  color: var(--zun-gris-dark);
   margin-bottom: 12px;
 }
+
+.stop-chips {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
 .chip-bidones {
-  background: #e0f2fe;
-  color: #0284c7;
-  font-size: 0.75rem;
+  background: var(--zun-blanco-sutil);
+  color: var(--zun-negro);
+  border: 1px solid var(--zun-border);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
   font-weight: 700;
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: 6px;
 }
+
 .chip-paid {
-  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
   font-weight: 700;
-  color: #059669;
+  color: #065f46;
+  display: flex;
+  align-items: center;
 }
 
 .debt-box-driver {
-  background: #fef3c7;
-  border: 1px solid #f59e0b;
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 0.78rem;
+  background: var(--zun-ambar-light);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 0.82rem;
   color: #92400e;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
 }
 
 .stop-actions-grid {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
+
 .btn-touch-main {
   width: 100%;
-  padding: 12px;
-  font-size: 0.95rem;
-  border-radius: 8px;
+  padding: 14px;
+  font-size: 0.98rem;
+  font-weight: 800;
+  border-radius: 6px;
 }
+
 .sub-actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
+
 .btn-touch-sub {
   flex: 1;
-  padding: 8px;
-  font-size: 0.78rem;
+  padding: 10px;
+  font-size: 0.8rem;
   text-decoration: none;
   text-align: center;
+  border-radius: 6px;
 }
 
 .stop-result-summary {
-  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
   font-weight: 700;
-  color: #059669;
-  padding-top: 4px;
+  color: #065f46;
+  padding-top: 6px;
 }
+
 .incidencia-sub {
   display: block;
+  font-size: 0.76rem;
+  color: var(--zun-rojo);
+  margin-top: 3px;
+}
+
+/* ==========================================================================
+   MÓDULO BODEGAS E INVENTARIO (HOVER DESTACADO Y PADDING INTERIOR AMPLIO)
+   ========================================================================== */
+.inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 20px;
+  margin-bottom: 28px;
+}
+
+.inv-card {
+  padding: 26px 24px;
+  min-height: 185px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Hover vivo estilo Revista ZUN sobre tarjetas de inventario */
+.inv-card:hover {
+  border-color: var(--zun-rojo) !important;
+  box-shadow: 4px 4px 0px var(--zun-rojo) !important;
+  transform: translate(-2px, -2px) !important;
+}
+
+.inv-card.inv-alert {
+  border-color: var(--zun-ambar);
+  background: var(--zun-ambar-light);
+}
+
+.inv-card.inv-alert:hover {
+  border-color: var(--zun-rojo) !important;
+}
+
+.inv-card.inv-danger {
+  border-color: var(--zun-rojo);
+  background: var(--zun-rojo-light);
+}
+
+.inv-title {
+  font-family: var(--font-mono);
   font-size: 0.74rem;
-  color: var(--danger);
+  font-weight: 700;
+  color: var(--zun-gris);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 14px;
+  display: block;
+}
+
+.inv-val {
+  font-family: var(--font-mono);
+  font-size: 2.2rem;
+  font-weight: 800;
+  line-height: 1.1;
+  margin-bottom: 12px;
+  color: var(--zun-negro);
+}
+
+.inv-val .unit {
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--zun-gris);
+}
+
+.inv-sub {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--zun-gris);
+}
+
+.inv-action {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(255, 38, 42, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: #7f1d1d;
+}
+
+/* Barra de Sincronización Continua entre Módulos */
+.sync-audit-card {
+  margin-top: 28px;
+  padding: 28px 32px;
+  border-left: 4px solid var(--zun-rojo);
+  margin-bottom: 28px;
+}
+
+.sync-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+}
+
+.sync-heading {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--zun-negro);
+  margin-top: 8px;
+}
+
+.equation-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--zun-blanco-sutil);
+  border: 1px solid var(--zun-border);
+  border-radius: var(--radius-sm);
+  padding: 20px 26px;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.eq-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.eq-num {
+  font-family: var(--font-mono);
+  font-size: 1.45rem;
+  font-weight: 800;
+}
+
+.eq-lbl {
+  font-size: 0.74rem;
+  color: var(--zun-gris);
   margin-top: 2px;
 }
 
-/* Módulo Bodegas e Inventario */
-.inventory-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-}
-.inv-card {
-  padding: 18px;
-}
-.inv-card.inv-alert { border-color: #f59e0b; background: #fffdf5; }
-.inv-card.inv-danger { border-color: #ef4444; background: #fef2f2; }
-.inv-title {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-.inv-val {
-  font-size: 1.8rem;
+.eq-op {
+  font-size: 1.4rem;
   font-weight: 800;
-  line-height: 1.2;
-  margin: 6px 0;
+  color: var(--zun-gris);
 }
-.inv-val .unit { font-size: 0.9rem; font-weight: 500; color: var(--text-muted); }
-.inv-sub { font-size: 0.78rem; color: var(--text-muted); }
 
-.bank-accounts-card {
-  padding: 22px;
+.eq-total {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  background: var(--zun-blanco);
+  border: 2px solid var(--zun-negro);
+  padding: 8px 20px;
+  border-radius: 8px;
 }
+
+.sync-quick-ops {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 16px;
+  border-top: 1px solid var(--zun-border);
+}
+
+.op-desc {
+  font-size: 0.85rem;
+  color: var(--zun-gris-dark);
+}
+
+.op-desc strong {
+  color: var(--zun-negro);
+  margin-right: 6px;
+}
+
+.op-btns {
+  display: flex;
+  gap: 10px;
+}
+
+/* Card de Cuentas Bancarias con Espaciado Generoso */
+.bank-accounts-card {
+  margin-top: 32px !important;
+  padding: 30px 32px;
+}
+
 .bank-card-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 18px;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--zun-border);
 }
-.bank-card-head h3 { font-size: 1.1rem; font-weight: 800; }
+
+.bank-card-head h3 {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--zun-negro);
+}
 
 .accounts-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
+
 .account-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 18px;
-  border: 1px solid var(--border);
+  padding: 20px 24px;
+  border: 1px solid var(--zun-border);
   border-radius: var(--radius-sm);
-  background: #f8fafc;
+  background: var(--zun-blanco-sutil);
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
+
+/* Hover firme sobre cuentas bancarias */
+.account-row:hover {
+  border-color: var(--zun-rojo) !important;
+  box-shadow: 3px 3px 0px var(--zun-rojo) !important;
+  transform: translate(-2px, -2px) !important;
+  background: #ffffff !important;
+}
+
 .account-row.is-active-account {
-  background: #ffffff;
-  border-color: var(--primary);
-  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.08);
+  background: var(--zun-blanco);
+  border: 2px solid var(--zun-negro);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
 }
+
 .acc-title-line {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 2px;
+  gap: 14px;
+  margin-bottom: 6px;
 }
+
 .acc-counter {
-  min-width: 180px;
+  min-width: 240px;
 }
+
 .counter-label {
   display: flex;
   justify-content: space-between;
-  font-size: 0.76rem;
-  margin-bottom: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  margin-bottom: 8px;
 }
+
 .counter-bar {
-  height: 6px;
-  background: #e2e8f0;
+  height: 8px;
+  background: var(--zun-border);
   border-radius: 9999px;
   overflow: hidden;
 }
+
 .counter-fill {
   height: 100%;
-  background: var(--primary);
+  background: var(--zun-negro);
   border-radius: 9999px;
 }
 
-/* Modales */
+/* ==========================================================================
+   MODALES OPERATIVOS (ESPACIADO INTERIOR Y HOVER)
+   ========================================================================== */
 .modal-form {
-  padding: 20px 24px;
+  padding: 26px 30px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
+
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
+
 .form-group label {
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   font-weight: 700;
-  color: #334155;
+  color: var(--zun-gris-dark);
 }
+
 .form-row {
   display: flex;
-  gap: 14px;
+  gap: 16px;
 }
+
 .debt-warning-banner {
   display: flex;
-  gap: 12px;
-  background: #fef3c7;
-  border: 1px solid #f59e0b;
+  gap: 14px;
+  background: var(--zun-ambar-light);
+  border: 1px solid rgba(245, 158, 11, 0.4);
   border-radius: var(--radius-sm);
-  padding: 12px;
-  font-size: 0.82rem;
+  padding: 14px 18px;
+  font-size: 0.84rem;
   color: #92400e;
 }
-.debt-warning-banner .warn-icon { font-size: 1.2rem; }
+
+.debt-warning-banner .warn-icon {
+  font-size: 1.3rem;
+}
+
 .form-summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #f1f5f9;
-  padding: 12px 16px;
+  background: var(--zun-blanco-sutil);
+  border: 1px solid var(--zun-border);
+  padding: 16px 22px;
   border-radius: var(--radius-sm);
   font-weight: 700;
 }
+
 .total-highlight {
-  font-size: 1.25rem;
-  color: var(--primary);
+  font-size: 1.4rem;
+  color: var(--zun-negro);
   font-family: var(--font-mono);
+  font-weight: 800;
 }
+
 .current-bank-box {
-  background: #f8fafc;
-  border: 1px solid var(--border);
+  background: var(--zun-blanco-sutil);
+  border: 1px solid var(--zun-border);
   border-radius: var(--radius-sm);
-  padding: 12px;
+  padding: 16px;
 }
+
 .current-bank-box .label {
   display: block;
-  font-size: 0.75rem;
-  color: var(--text-muted);
+  font-size: 0.78rem;
+  color: var(--zun-gris);
+  margin-bottom: 2px;
 }
+
 .detail-row {
-  padding: 8px 0;
-  border-bottom: 1px solid #f1f5f9;
-  font-size: 0.9rem;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--zun-border);
+  font-size: 0.92rem;
 }
 
 .modal-mobile {
-  max-width: 440px;
+  max-width: 460px;
 }
+
 .modal-client-note {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  margin-bottom: 16px;
+  font-size: 0.88rem;
+  color: var(--zun-gris);
+  margin-bottom: 18px;
   line-height: 1.5;
 }
+
 .exception-options {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
+
 .btn-exception-option {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
-  padding: 16px;
+  gap: 16px;
+  padding: 18px 20px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+  border: 1px solid var(--zun-border);
   text-align: left;
-  background: #ffffff;
-  transition: all 0.15s;
+  background: var(--zun-blanco);
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
+
 .btn-exception-option:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-  transform: translateY(-1px);
+  background: #ffffff !important;
+  border-color: var(--zun-rojo) !important;
+  box-shadow: 3px 3px 0px var(--zun-rojo) !important;
+  transform: translate(-2px, -2px) !important;
 }
-.opt-icon { font-size: 1.6rem; line-height: 1; }
-.opt-text { display: flex; flex-direction: column; gap: 3px; }
-.opt-text strong { font-size: 0.92rem; color: #0f172a; }
-.opt-text span { font-size: 0.78rem; color: var(--text-muted); line-height: 1.45; }
+
+.opt-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.opt-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.opt-text strong {
+  font-size: 0.95rem;
+  color: var(--zun-negro);
+}
+
+.opt-text span {
+  font-size: 0.8rem;
+  color: var(--zun-gris);
+  line-height: 1.45;
+}
 </style>

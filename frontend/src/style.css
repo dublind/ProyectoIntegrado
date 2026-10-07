@@ -1,30 +1,85 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
-
 :root {
-  --primary: #0284c7;
-  --primary-hover: #0369a1;
-  --primary-light: #e0f2fe;
-  --accent: #06b6d4;
-  --bg-main: #f8fafc;
-  --bg-card: #ffffff;
-  --text-main: #0f172a;
-  --text-muted: #64748b;
-  --border: #e2e8f0;
-  --success: #10b981;
-  --success-light: #d1fae5;
-  --warning: #f59e0b;
-  --warning-light: #fef3c7;
-  --danger: #ef4444;
-  --danger-light: #fee2e2;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 18px;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
-  --shadow-md: 0 4px 14px rgba(0,0,0,0.06);
-  --shadow-lg: 0 10px 25px rgba(2, 132, 199, 0.12);
-  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  /* ==========================================================================
+     PALETA DE DISEÑO EDITORIAL MONOCROMÁTICA + ACENTOS (INSPIRADO EN REVISTA ZUN)
+     ========================================================================== */
+  
+  /* 1. NEGROS */
+  --zun-negro: #111111;
+  --zun-text: #1f1f1f;
+  
+  /* 2. ESCALA DE GRISES */
+  --zun-gris-dark: #333333;
+  --zun-gris: #565656;
+  --zun-gris-medium: #767676;
+  --zun-gris-light: #d1d5db;
+  --zun-gris-cielo: #eceff4;
+  --zun-border: #e5e7eb;
+  --zun-line: rgba(0, 0, 0, 0.08);
+  
+  /* 3. TRES BLANCOS */
+  --zun-blanco: #ffffff;         /* Blanco puro: tarjetas, modales, papel */
+  --zun-blanco-cielo: #f9faff;   /* Blanco cielo frío: fondo general de la app */
+  --zun-blanco-sutil: #f4f6ff;   /* Blanco sutil: cabeceras de tabla, celdas alternas, inputs */
+  
+  /* 4. TRES COLORES EXCLUSIVOS PARA ALERTAS Y BOTONES */
+  /* Rojo Zun (Acento icónico, hover primario, foco, botón crítico, botellones rotos) */
+  --zun-rojo: #ff262a;
+  --zun-rojo-hover: #e01d21;
+  --zun-rojo-light: #fff1f1;
+  
+  /* Verde Zun (Éxito, botón confirmar entrega, pedido pagado, chofer conectado) */
+  --zun-verde: #10b981;
+  --zun-verde-hover: #059669;
+  --zun-verde-light: #ecfdf5;
+  
+  /* Ámbar Zun (Advertencia, alerta de botellón pendiente, regla de 45 cuentas, offline) */
+  --zun-ambar: #f59e0b;
+  --zun-ambar-hover: #d97706;
+  --zun-ambar-light: #fffbeb;
+
+  /* Aliases de Compatibilidad */
+  --primary: var(--zun-negro);
+  --primary-hover: var(--zun-rojo);
+  --primary-light: var(--zun-blanco-sutil);
+  --accent: var(--zun-rojo);
+  --bg-main: var(--zun-blanco-cielo);
+  --bg-card: var(--zun-blanco);
+  --text-main: var(--zun-text);
+  --text-muted: var(--zun-gris);
+  --border: var(--zun-border);
+  --success: var(--zun-verde);
+  --success-light: var(--zun-verde-light);
+  --warning: var(--zun-ambar);
+  --warning-light: var(--zun-ambar-light);
+  --danger: var(--zun-rojo);
+  --danger-light: var(--zun-rojo-light);
+
+  /* Tipografía Oficial Zun */
+  --font-display: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'DM Mono', monospace;
+  --font-sans: var(--font-body);
+
+  /* Radios */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 100px;
+
+  /* Sombras Zun */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 6px 16px rgba(0, 0, 0, 0.04);
+  --shadow-card-hover: 0 14px 28px -6px rgba(0, 0, 0, 0.1);
+  --shadow-cta: 3px 3px 0px var(--zun-rojo);
+  --shadow-cta-black: 3px 3px 0px var(--zun-negro);
+  --shadow-modal: 0 24px 48px -12px rgba(0, 0, 0, 0.22);
 }
+
+/* ==========================================================================
+   RESET Y BASE TIPOGRÁFICA
+   ========================================================================== */
 
 * {
   box-sizing: border-box;
@@ -33,16 +88,42 @@
 }
 
 body {
-  font-family: var(--font-sans);
+  font-family: var(--font-body);
   background-color: var(--bg-main);
   color: var(--text-main);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Interacción universal con cursor pointer */
+button,
+.btn,
+.nav-btn,
+.tag-btn,
+.inv-card,
+.account-row,
+.stop-item-card,
+.fleet-card,
+.btn-exception-option,
+.queue-item,
+.data-table tr,
+.stock-pill {
+  cursor: pointer;
+}
+
+/* Focus Visible Editorial (Firma visual de Revista ZUN) */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--zun-rojo) !important;
+  outline-offset: 2px !important;
 }
 
 button {
   font-family: inherit;
-  cursor: pointer;
   border: none;
   background: none;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -50,190 +131,332 @@ button {
 
 input, select, textarea {
   font-family: inherit;
-  border: 1px solid var(--border);
+  border: 1px solid var(--zun-border);
   border-radius: var(--radius-sm);
-  padding: 10px 14px;
-  font-size: 0.95rem;
+  padding: 12px 16px;
+  font-size: 0.92rem;
   outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  background-color: #ffffff;
+  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+  background-color: var(--zun-blanco);
   color: var(--text-main);
 }
 
 input:focus, select:focus, textarea:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+  border-color: var(--zun-rojo);
+  background-color: #ffffff;
 }
 
-/* Badges */
+/* ==========================================================================
+   BADGES Y PILLS (DM MONO)
+   ========================================================================== */
+
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: 9999px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  transition: all 0.2s ease;
 }
 
-.badge-primary { background: var(--primary-light); color: var(--primary); }
-.badge-success { background: var(--success-light); color: var(--success); }
-.badge-warning { background: var(--warning-light); color: #b45309; }
-.badge-danger { background: var(--danger-light); color: var(--danger); }
-.badge-neutral { background: #f1f5f9; color: #475569; }
+.badge-primary {
+  background: var(--zun-negro);
+  color: var(--zun-blanco);
+}
 
-/* Buttons */
+.badge-success {
+  background: var(--zun-verde-light);
+  color: #065f46;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.badge-warning {
+  background: var(--zun-ambar-light);
+  color: #92400e;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.badge-danger {
+  background: var(--zun-rojo-light);
+  color: #991b1b;
+  border: 1px solid rgba(255, 38, 42, 0.3);
+}
+
+.badge-neutral {
+  background: var(--zun-blanco-sutil);
+  color: var(--zun-gris-dark);
+  border: 1px solid var(--zun-border);
+}
+
+/* ==========================================================================
+   BOTONES EDITORIALES (HOVER FIRME REVISTA ZUN)
+   ========================================================================== */
+
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px 18px;
+  padding: 12px 20px;
   border-radius: var(--radius-sm);
-  font-weight: 600;
+  font-family: var(--font-body);
+  font-weight: 700;
   font-size: 0.92rem;
-  transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  text-decoration: none;
+  border: 1px solid transparent;
 }
 
 .btn:active {
-  transform: scale(0.98);
+  transform: translate(1px, 1px) !important;
 }
 
+/* Botón Primario: Negro sólido con salto y sombra roja en hover */
 .btn-primary {
-  background: linear-gradient(135deg, var(--primary), var(--accent));
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.25);
+  background: var(--zun-negro) !important;
+  color: #ffffff !important;
+  border-color: var(--zun-negro) !important;
 }
 
 .btn-primary:hover {
-  background: linear-gradient(135deg, var(--primary-hover), var(--primary));
-  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35);
+  background: var(--zun-negro) !important;
+  color: #ffffff !important;
+  border-color: var(--zun-negro) !important;
+  box-shadow: 3px 3px 0px var(--zun-rojo) !important;
+  transform: translate(-2px, -2px) !important;
 }
 
+/* Botón Acento Rojo ZUN */
+.btn-accent-red {
+  background: var(--zun-rojo) !important;
+  color: #ffffff !important;
+  border-color: var(--zun-rojo) !important;
+}
+
+.btn-accent-red:hover {
+  background: var(--zun-rojo-hover) !important;
+  box-shadow: 3px 3px 0px var(--zun-negro) !important;
+  transform: translate(-2px, -2px) !important;
+}
+
+/* Botón Secundario Monocromático: Alto contraste en hover */
 .btn-secondary {
-  background: #f1f5f9;
-  color: #334155;
+  background: var(--zun-blanco) !important;
+  color: var(--zun-text) !important;
+  border-color: var(--zun-border) !important;
 }
 
 .btn-secondary:hover {
-  background: #e2e8f0;
+  background: #ffffff !important;
+  border-color: var(--zun-rojo) !important;
+  color: var(--zun-rojo) !important;
+  box-shadow: 2px 2px 0px var(--zun-rojo) !important;
+  transform: translate(-1px, -1px) !important;
 }
 
+/* Botón Éxito (Verde para confirmaciones) */
 .btn-success {
-  background: var(--success);
-  color: #ffffff;
+  background: var(--zun-verde) !important;
+  color: #ffffff !important;
+  border-color: var(--zun-verde) !important;
 }
 
 .btn-success:hover {
-  background: #059669;
+  background: var(--zun-verde-hover) !important;
+  border-color: var(--zun-verde-hover) !important;
+  box-shadow: 3px 3px 0px var(--zun-negro) !important;
+  transform: translate(-2px, -2px) !important;
 }
 
+/* Botón Peligro Contorno */
 .btn-danger-outline {
-  border: 1px solid var(--danger);
-  color: var(--danger);
+  border: 1px solid var(--zun-rojo) !important;
+  color: var(--zun-rojo) !important;
+  background: transparent !important;
 }
 
 .btn-danger-outline:hover {
-  background: var(--danger-light);
+  background: var(--zun-rojo) !important;
+  color: #ffffff !important;
+  border-color: var(--zun-rojo) !important;
+  box-shadow: 3px 3px 0px var(--zun-negro) !important;
+  transform: translate(-2px, -2px) !important;
 }
 
-/* Card */
+/* Tamaños de Botones */
+.btn-sm {
+  padding: 8px 14px;
+  font-size: 0.82rem;
+  border-radius: var(--radius-xs);
+}
+
+/* ==========================================================================
+   TARJETAS EDITORIALES CON HOVER REVISTA ZUN
+   ========================================================================== */
+
 .card {
   background: var(--bg-card);
   border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
-  padding: 20px;
+  border: 1px solid var(--zun-border);
+  box-shadow: var(--shadow-card);
+  padding: 26px 28px;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Modal Overlay */
+.card-interactive:hover {
+  border-color: var(--zun-rojo) !important;
+  box-shadow: 3px 3px 0px var(--zun-rojo) !important;
+  transform: translate(-2px, -2px) !important;
+}
+
+/* ==========================================================================
+   MODALES CON ELEVACIÓN Y PADDING ESTRUCTURADO
+   ========================================================================== */
+
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.6);
+  background: rgba(17, 17, 17, 0.65);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  padding: 20px;
+  padding: 24px;
 }
 
 .modal-content {
-  background: #ffffff;
+  background: var(--zun-blanco);
   border-radius: var(--radius-lg);
-  max-width: 600px;
+  border: 1px solid var(--zun-border);
+  max-width: 640px;
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-  animation: modalIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--shadow-modal);
+  animation: modalIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--border);
+  padding: 24px 30px;
+  border-bottom: 1px solid var(--zun-border);
+  background-color: var(--zun-blanco);
 }
 
 .modal-header h2, .modal-header h3 {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--text-main);
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--zun-negro);
   margin: 0;
+  letter-spacing: -0.01em;
 }
 
 .modal-body {
-  padding: 20px 24px;
+  padding: 28px 30px;
 }
 
 .modal-footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
-  padding: 16px 24px;
-  border-top: 1px solid var(--border);
+  gap: 14px;
+  padding: 20px 30px;
+  border-top: 1px solid var(--zun-border);
+  background-color: var(--zun-blanco-sutil);
 }
 
 .btn-close {
   background: transparent;
-  border: none;
-  font-size: 1.5rem;
+  border: 1px solid transparent;
+  font-size: 1.4rem;
   line-height: 1;
-  color: #94a3b8;
+  color: var(--zun-gris);
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   transition: all 0.15s ease;
 }
 
 .btn-close:hover {
-  color: #0f172a;
-  background: #f1f5f9;
+  color: var(--zun-rojo);
+  border-color: var(--zun-rojo);
+  background: var(--zun-blanco);
 }
 
 @keyframes modalIn {
-  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* Custom Scrollbar */
+/* ==========================================================================
+   SCROLLBAR MINIMALISTA
+   ========================================================================== */
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: var(--zun-blanco-cielo);
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--zun-gris-light);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--zun-gris);
 }
+
+/* Utilidades Tipográficas */
+.font-mono {
+  font-family: var(--font-mono) !important;
+}
+.font-bold {
+  font-weight: 700;
+}
+.font-semibold {
+  font-weight: 600;
+}
+.text-muted {
+  color: var(--zun-gris) !important;
+}
+.text-xs {
+  font-size: 0.75rem;
+}
+.text-sm {
+  font-size: 0.85rem;
+}
+
+/* Clases de Color Funcionales */
+.text-primary {
+  color: var(--zun-negro) !important;
+}
+.text-success {
+  color: var(--zun-verde) !important;
+}
+.text-warning {
+  color: var(--zun-ambar) !important;
+}
+.text-danger {
+  color: var(--zun-rojo) !important;
+}
+
+/* Clases de Espaciado Global */
+.mt-1 { margin-top: 4px !important; }
+.mt-2 { margin-top: 8px !important; }
+.mt-3 { margin-top: 12px !important; }
+.mt-4 { margin-top: 16px !important; }
+.mt-6 { margin-top: 24px !important; }
+.mt-8 { margin-top: 32px !important; }
+.mb-2 { margin-bottom: 8px !important; }
+.mb-4 { margin-bottom: 16px !important; }
+.mb-6 { margin-bottom: 24px !important; }
+.mb-8 { margin-bottom: 32px !important; }

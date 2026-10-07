@@ -23,7 +23,7 @@ const clientesIniciales: Cliente[] = [
     telefono: '+56 9 7654 3210',
     direccion: 'Ahumada 341, Of. 804',
     comuna: 'Santiago Centro',
-    deudaEnvases: 1, // Tiene un botellón pendiente!
+    deudaEnvases: 1, // Tiene un botellón pendiente
     ultimoPedido: {
       cantidadBidones: 4,
       tipoProducto: 'Agua Purificada 20L Sellada',
@@ -49,7 +49,7 @@ const clientesIniciales: Cliente[] = [
     telefono: '+56 9 6543 2109',
     direccion: 'Av. Irarrázaval 3820',
     comuna: 'Ñuñoa',
-    deudaEnvases: 2, // Deuda de 2 envases!
+    deudaEnvases: 2, // Deuda de 2 envases
     ultimoPedido: {
       cantidadBidones: 3,
       tipoProducto: 'Agua Purificada 20L Sellada',
@@ -63,7 +63,7 @@ const vehiculosIniciales: Vehiculo[] = [
     id: 'veh-1',
     patente: 'KBLP-42',
     modelo: 'Peugeot Partner Maxi (Furgón 1)',
-    capacidadMax: 20, // Parametrizable (base 12, ampliado a 20)
+    capacidadMax: 20, // Parametrizable
     choferAsignado: 'Pedro Chofer',
     activo: true
   },
@@ -86,7 +86,7 @@ const cuentasBancariasIniciales: CuentaBancaria[] = [
     titular: 'Aguas Purificadas Erick SpA',
     rut: '76.892.411-5',
     email: 'pagos@aguapurificada.cl',
-    comprobantesProcesados: 44, // En 44! Al siguiente comprobante saltará a 45 y conmutará automáticamente!
+    comprobantesProcesados: 44, // Al validar 1 más conmutará automáticamente a 45
     activa: true
   },
   {
@@ -152,7 +152,7 @@ const pedidosIniciales: Pedido[] = [
     promesaEntrega: 'Mañana (Turno Mañana)',
     comprobanteTransferencia: 'comprobante_banco_102.pdf',
     cuentaBancariaId: 'cta-1',
-    tieneAlertaDeuda: true, // Alerta: cliente debe 1 envase
+    tieneAlertaDeuda: true,
     deudaEnvasesPendiente: 1
   },
   {
@@ -211,9 +211,9 @@ const turnoActivoInicial: TurnoDespacho = {
 const inventarioInicial: InventarioBodega = {
   llenosCentral: 142,
   vaciosCentral: 85,
-  enTransito: 7, // en el furgón de Pedro Chofer
-  pendientesDevolucion: 3, // Estudio Jurídico (1) + Panadería (2)
-  rotosBodega: 4, // Botellones físicos rotos esperando inspección de Erick
+  enTransito: 7, // Sincronizado con botellonesCargados del furgón
+  pendientesDevolucion: 3, // Estudio Jurídico (1) + Panadería (2) = 3
+  rotosBodega: 4, // Botellones rotos esperando baja de Erick
   noRetornaron30d: 2,
   bajasDefinitivas60d: 5
 };
@@ -232,6 +232,7 @@ class AppStore {
 
   constructor() {
     this.cargarDesdeLocalStorage();
+    this.sincronizarInventario();
   }
 
   private guardarEnLocalStorage() {
@@ -252,6 +253,22 @@ class AppStore {
     } catch (e) {
       console.warn('No se pudo cargar desde localStorage', e);
     }
+  }
+
+  /**
+   * Sincronización continua de inventario con todos los módulos:
+   * - En tránsito: exactamente igual a los botellones asignados en furgones de reparto.
+   * - Pendientes: exactamente igual a la suma de envases adeudados por todos los clientes.
+   */
+  sincronizarInventario() {
+    // 1. En tránsito se sincroniza con los botellones cargados en ruta
+    this.state.inventario.enTransito = this.state.turnoActivo.botellonesCargados;
+
+    // 2. Pendientes se sincroniza con la suma de deuda de todos los clientes
+    const deudaTotalClientes = this.state.clientes.reduce((acc, c) => acc + (c.deudaEnvases || 0), 0);
+    this.state.inventario.pendientesDevolucion = deudaTotalClientes;
+
+    this.guardarEnLocalStorage();
   }
 
   // Getters computados
@@ -349,7 +366,7 @@ class AppStore {
       fecha: new Date().toISOString().split('T')[0]
     };
 
-    this.guardarEnLocalStorage();
+    this.sincronizarInventario();
     return nuevoPedido;
   }
 
@@ -388,7 +405,7 @@ class AppStore {
     cuentas.forEach((c, idx) => {
       c.activa = (idx === siguienteIdx);
       if (idx === siguienteIdx) {
-        c.comprobantesProcesados = 0; // Reinicia contador para nueva cuenta
+        c.comprobantesProcesados = 0; // Reinicia contador para nueva cuenta activa
       }
     });
 
@@ -410,10 +427,9 @@ class AppStore {
     turno.botellonesCargados = nuevaCarga;
     pedido.estado = 'en_despacho';
 
+    // Se descuentan de bodega central (llenos) y suben al furgón (en tránsito)
     this.state.inventario.llenosCentral -= pedido.cantidadBidones;
-    this.state.inventario.enTransito += pedido.cantidadBidones;
-
-    this.guardarEnLocalStorage();
+    this.sincronizarInventario();
   }
 
   // Acciones Chofer (Tarea #49)
@@ -423,15 +439,17 @@ class AppStore {
 
     pedido.estado = 'entregado';
     
-    // Si tenía deuda pendiente y devolvió
+    // Si tenía deuda pendiente previa y el cliente devolvió el envase
     if (pedido.deudaEnvasesPendiente > 0) {
       const cliente = this.state.clientes.find(c => c.id === pedido.clienteId);
-      if (cliente) cliente.deudaEnvases = Math.max(0, cliente.deudaEnvases - 1);
+      if (cliente) {
+        cliente.deudaEnvases = Math.max(0, cliente.deudaEnvases - 1);
+      }
       pedido.tieneAlertaDeuda = false;
-      this.state.inventario.pendientesDevolucion = Math.max(0, this.state.inventario.pendientesDevolucion - 1);
+      pedido.deudaEnvasesPendiente = Math.max(0, pedido.deudaEnvasesPendiente - 1);
     }
 
-    this.guardarEnLocalStorage();
+    this.sincronizarInventario();
   }
 
   reportarIncidenciaChofer(pedidoId: string, tipo: 'pendiente' | 'ausente' | 'roto', detalle: string) {
@@ -446,20 +464,60 @@ class AppStore {
     };
 
     if (tipo === 'pendiente') {
-      pedido.estado = 'entregado'; // se entregó el agua pero faltó el envase
+      // Se entregó el bidón pero el cliente no entregó el envase vacío -> genera deuda en ficha cliente
+      pedido.estado = 'entregado';
       const cliente = this.state.clientes.find(c => c.id === pedido.clienteId);
-      if (cliente) cliente.deudaEnvases += 1;
+      if (cliente) {
+        cliente.deudaEnvases += 1;
+      }
       pedido.tieneAlertaDeuda = true;
-      this.state.inventario.pendientesDevolucion += 1;
+      pedido.deudaEnvasesPendiente = (pedido.deudaEnvasesPendiente || 0) + 1;
     } else if (tipo === 'ausente') {
+      // Cliente no estaba -> no se entrega y sigue en furgón para reprogramación
       pedido.estado = 'ausente';
     } else if (tipo === 'roto') {
+      // Fisurado en furgón -> merma física entra a bodega de rotos
       pedido.estado = 'parcial';
       this.state.inventario.rotosBodega += 1;
-      this.state.inventario.enTransito = Math.max(0, this.state.inventario.enTransito - 1);
+      this.state.turnoActivo.botellonesCargados = Math.max(0, this.state.turnoActivo.botellonesCargados - 1);
     }
 
-    this.guardarEnLocalStorage();
+    this.sincronizarInventario();
+  }
+
+  // Liquidación del furgón al retornar a bodega central (descarga de vacíos y cuadratura física)
+  liquidarRetornoFurgonCentral() {
+    const pedidos = this.state.pedidos.filter(p => this.state.turnoActivo.pedidosIds.includes(p.id));
+    
+    // Vacíos recolectados de pedidos entregados entran a bodega central de vacíos
+    const vaciosRecolectados = pedidos
+      .filter(p => p.estado === 'entregado' && p.incidencia?.tipo !== 'pendiente')
+      .reduce((sum, p) => sum + p.cantidadBidones, 0);
+
+    // Llenos no entregados (ausente) reingresan a bodega central de llenos
+    const llenosNoEntregados = pedidos
+      .filter(p => p.estado === 'ausente')
+      .reduce((sum, p) => sum + p.cantidadBidones, 0);
+
+    this.state.inventario.vaciosCentral += vaciosRecolectados;
+    this.state.inventario.llenosCentral += llenosNoEntregados;
+    
+    // Furgón descarga por completo al finalizar su turno
+    this.state.turnoActivo.botellonesCargados = 0;
+    this.state.turnoActivo.pedidosIds = [];
+    this.state.turnoActivo.estado = 'finalizado';
+
+    this.sincronizarInventario();
+  }
+
+  // Recarga/Lavado de botellones en planta (vacíos a llenos)
+  sanitizarYRecargar(cantidad = 20) {
+    const cant = Math.min(this.state.inventario.vaciosCentral, cantidad);
+    if (cant > 0) {
+      this.state.inventario.vaciosCentral -= cant;
+      this.state.inventario.llenosCentral += cant;
+      this.sincronizarInventario();
+    }
   }
 
   // Exclusivo Administrador / Erick: Autorizar baja definitiva física
@@ -467,7 +525,7 @@ class AppStore {
     if (this.state.inventario.rotosBodega >= cantidad) {
       this.state.inventario.rotosBodega -= cantidad;
       this.state.inventario.bajasDefinitivas60d += cantidad;
-      this.guardarEnLocalStorage();
+      this.sincronizarInventario();
     }
   }
 
@@ -484,13 +542,14 @@ class AppStore {
 
   resetDemoData() {
     localStorage.removeItem(STORAGE_KEY);
-    this.state.clientes = [...clientesIniciales];
-    this.state.pedidos = [...pedidosIniciales];
-    this.state.vehiculos = [...vehiculosIniciales];
-    this.state.cuentasBancarias = [...cuentasBancariasIniciales];
-    this.state.turnoActivo = { ...turnoActivoInicial };
-    this.state.inventario = { ...inventarioInicial };
+    this.state.clientes = JSON.parse(JSON.stringify(clientesIniciales));
+    this.state.pedidos = JSON.parse(JSON.stringify(pedidosIniciales));
+    this.state.vehiculos = JSON.parse(JSON.stringify(vehiculosIniciales));
+    this.state.cuentasBancarias = JSON.parse(JSON.stringify(cuentasBancariasIniciales));
+    this.state.turnoActivo = JSON.parse(JSON.stringify(turnoActivoInicial));
+    this.state.inventario = JSON.parse(JSON.stringify(inventarioInicial));
     this.state.notificacionRotacion = null;
+    this.sincronizarInventario();
   }
 }
 
