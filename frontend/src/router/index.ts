@@ -1,26 +1,24 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import PortalHub from '../views/PortalHub.vue';
-import AdminView from '../views/AdminView.vue';
-import ChoferView from '../views/ChoferView.vue';
+import MainAppView from '../views/MainAppView.vue';
 
 const routes = [
   {
     path: '/',
-    name: 'PortalHub',
-    component: PortalHub,
-    meta: { title: 'Portal Distribución de Agua - Sprint 1' }
+    name: 'MainApp',
+    component: MainAppView,
+    meta: { title: 'Sistema de gestión y distribución de agua purificada' }
   },
   {
     path: '/admin',
-    name: 'AdminView',
-    component: AdminView,
-    meta: { title: 'Administración de Pedidos - Tarea #48' }
+    redirect: '/'
   },
   {
     path: '/chofer',
-    name: 'ChoferView',
-    component: ChoferView,
-    meta: { title: 'App Móvil de Reparto - Tarea #49' }
+    redirect: '/'
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    redirect: '/'
   }
 ];
 
@@ -31,7 +29,7 @@ const router = createRouter({
 
 router.beforeEach((to, _from, next) => {
   if (to.meta.title) {
-    document.title = `${to.meta.title} | Proyecto Integrado`;
+    document.title = `${to.meta.title}`;
   }
   next();
 });

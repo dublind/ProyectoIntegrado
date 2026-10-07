@@ -21,16 +21,18 @@ Sistema para coordinar la venta y el reparto de bidones de agua purificada de 20
 | Work Item ID | Título del ítem | Criterio de aceptación oficial | Entregable en el repositorio |
 | :---: | :--- | :--- | :--- |
 | **[#47](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_workitems/edit/47)** | **Mapear experiencia de administrativo y chofer** | *Flujos y estados de pantalla cubren pedido, carga, entrega e incidencia.* | [`docs/ux/mapeo_experiencia_admin_chofer.md`](./docs/ux/mapeo_experiencia_admin_chofer.md) |
-| **[#48](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_workitems/edit/48)** | **Diseñar interfaz de administración de pedidos** | *Prototipo permite buscar, crear y revisar pedidos con estado y pago.* | [`frontend/src/views/AdminView.vue`](./frontend/src/views/AdminView.vue) (`/admin`) |
-| **[#49](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_workitems/edit/49)** | **Diseñar interfaz móvil de reparto** | *Prototipo permite ver paradas, confirmar entrega y reportar envases.* | [`frontend/src/views/ChoferView.vue`](./frontend/src/views/ChoferView.vue) (`/chofer`) |
+| **[#48](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_workitems/edit/48)** | **Diseñar interfaz de administración de pedidos** | *Prototipo permite buscar, crear y revisar pedidos con estado y pago.* | [`frontend/src/views/MainAppView.vue`](./frontend/src/views/MainAppView.vue) (Módulos *Pedidos* y *Despacho*) |
+| **[#49](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_workitems/edit/49)** | **Diseñar interfaz móvil de reparto** | *Prototipo permite ver paradas, confirmar entrega y reportar envases.* | [`frontend/src/views/MainAppView.vue`](./frontend/src/views/MainAppView.vue) (Módulo *Terminal de chofer*) |
 
 ---
 
 ## 3. Stack tecnológico
 
-* **Frontend:** Vue 3 con Vite y TypeScript.
-  * *Panel administrativo:* Módulo web de escritorio con búsqueda, prellenado automático, alertas de envases adeudados y gestión de cobros.
-  * *Vista del chofer:* Progressive Web App (PWA) con diseño *mobile-first*, paradas geográficas, check de entrega en 1 toque y almacenamiento local (*offline-first*).
+* **Frontend:** Vue 3 con Vite y TypeScript en una **solución única e integrada** (`MainAppView.vue`), que articula en tiempo real:
+  * *Pedidos y ventas:* Búsqueda, prellenado automático, detección de envases adeudados y cobros.
+  * *Despacho y furgones:* Control de capacidad por vehículo ($N_{\max}$) y asignación de hojas de ruta.
+  * *Terminal de chofer:* Interfaz móvil para reparto con paradas en orden geográfico, check de entrega en 1 toque y excepciones de botellones.
+  * *Bodegas e inventario:* Cuadratura continua bajo la FSM de 6 estados, bodega de rotos y rotación bancaria a los **45 comprobantes**.
 * **Backend y base de datos (planificado):** Supabase (PostgreSQL, Row Level Security, Edge Functions).
 * **Integraciones:**
   * *Pagos digitales:* Webpay Plus de Transbank (confirmación automática).
@@ -46,15 +48,13 @@ Sistema para coordinar la venta y el reparto de bidones de agua purificada de 20
 ├── docs/
 │   └── ux/
 │       └── mapeo_experiencia_admin_chofer.md   # Service Blueprint, FSM de 6 estados y matriz de pantallas (#47)
-├── frontend/                                   # Aplicación Vue 3 + Vite + TypeScript (#48 y #49)
+├── frontend/                                   # Plataforma integrada en Vue 3 + Vite + TypeScript
 │   ├── src/
 │   │   ├── types/                              # Interfaces TypeScript del dominio
-│   │   ├── store/                              # Estado reactivo y reglas de negocio del MVP
-│   │   ├── router/                             # Rutas: '/', '/admin', '/chofer'
+│   │   ├── store/                              # Estado reactivo global y reglas de negocio del MVP
+│   │   ├── router/                             # Rutas de la aplicación
 │   │   ├── views/
-│   │   │   ├── PortalHub.vue                   # Portal selector del Sprint 1
-│   │   │   ├── AdminView.vue                   # Interfaz de administración de pedidos (#48)
-│   │   │   └── ChoferView.vue                  # Interfaz móvil de chofer (#49)
+│   │   │   └── MainAppView.vue                 # Interfaz única articulada (Pedidos, Despacho, Chofer, Bodegas)
 │   │   ├── style.css                           # Sistema de diseño y variables CSS
 │   │   ├── App.vue
 │   │   └── main.ts
@@ -89,10 +89,8 @@ npm install
 npm run dev
 ```
 
-La aplicación quedará disponible en `http://localhost:5173/`:
-* **Portal general:** `http://localhost:5173/`
-* **Panel de administración (Tarea #48):** `http://localhost:5173/admin`
-* **App móvil del chofer (Tarea #49):** `http://localhost:5173/chofer`
+La plataforma quedará disponible en `http://localhost:5173/`:
+Al ingresar, se accede de inmediato a la aplicación operativa completa sin intermediarios ni menús de tareas.
 
 ### Sincronización con Azure Boards (opcional)
 ```bash
