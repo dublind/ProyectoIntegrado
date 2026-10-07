@@ -1,58 +1,104 @@
 # Proyecto Integrado: distribución de bidones de agua purificada
 
-Sistema para coordinar la venta y el reparto de bidones de agua purificada. El producto busca que el equipo pueda seguir cada pedido desde su recepción y pago hasta la entrega, mientras controla el stock de botellones llenos, vacíos y en tránsito.
+Sistema para coordinar la venta y el reparto de bidones de agua purificada de 20 litros. Permite dar trazabilidad a cada pedido desde su recepción por WhatsApp y cobro hasta la entrega efectiva, controlando el inventario de botellones llenos, vacíos, en tránsito, pendientes y rotos mediante una máquina de estados finitos (FSM).
 
-> **Estado:** proyecto en desarrollo. Este repositorio contiene por ahora la documentación inicial; las funcionalidades descritas corresponden al MVP planificado en [Azure DevOps](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_boards/board/t/Proyecto%20Integrado%20Team/Backlog%20items) y no deben interpretarse como implementadas.
+> **Estado:** Sprint 1 en desarrollo activo. Las tareas de mapeo de experiencia y prototipos interactivos (**#47, #48 y #49**) se encuentran diseñadas e implementadas en **Vue 3 + TypeScript**. El avance se gestiona en [Azure DevOps](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_boards/board/t/Proyecto%20Integrado%20Team/Backlog%20items).
 
-## Problema que resuelve
+---
 
-La operación de reparto necesita conectar solicitudes, confirmaciones de pago, preparación de pedidos, carga de vehículos, entregas y devolución de envases. Cuando estos datos quedan separados, resulta difícil conocer el estado real de un pedido y cuadrar el inventario. El proyecto propone un flujo trazable para el personal administrativo, los choferes y la persona dueña del negocio, con información clara para el cliente.
+## 1. Equipo de desarrollo (INACAP 2026)
 
-## Objetivo del MVP
+* **Ignacio Salinas:** Product Owner (PO)
+* **Ainelyn Sánchez:** Arquitectura técnica, repositorio y CI/CD
+* **Agustín Briceño:** Modelado de datos, APIs de clientes y pagos
+* **Fabián Jeldes:** Diseño de experiencia (UX/UI), panel de administración y app móvil de reparto
+* **Docente guía:** Maruxa Salinas — Analista Programador
 
-Permitir gestionar el ciclo operativo de un pedido de agua purificada y registrar los movimientos de bidones retornables. El alcance se organiza en estos bloques:
+---
 
-| Bloque | Capacidades previstas |
-| --- | --- |
-| Clientes y pedidos | Registrar clientes con varias direcciones; crear pedidos y mantener un historial de estados. |
-| Canales y comunicación | Recibir solicitudes desde WhatsApp; confirmar el pedido y comunicar una promesa de entrega aprobada. |
-| Pagos | Gestionar enlaces de pago Webpay y transferencias bancarias; liberar el pedido a despacho solo tras la validación correspondiente. |
-| Inventario | Registrar botellones llenos, vacíos, en tránsito, pendientes y rotos mediante movimientos auditables. |
-| Despacho y reparto | Asignar carga y pedidos a vehículo, ruta y chofer; confirmar entregas y retornos de envases. |
-| Interfaces y acceso | Disponer de vistas para administración y reparto móvil, con permisos según perfil. |
-| Seguimiento | Mostrar indicadores básicos, enviar avisos operativos y exportar movimientos para auditoría. |
+## 2. Entregables del Sprint 1
 
-El [backlog de Azure DevOps](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_boards/board/t/Proyecto%20Integrado%20Team/Backlog%20items) es la referencia para las historias, responsables, iteraciones, criterios de aceptación y estado actualizado.
+| Work Item ID | Título del ítem | Criterio de aceptación oficial | Entregable en el repositorio |
+| :---: | :--- | :--- | :--- |
+| **[#47](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_workitems/edit/47)** | **Mapear experiencia de administrativo y chofer** | *Flujos y estados de pantalla cubren pedido, carga, entrega e incidencia.* | [`docs/ux/mapeo_experiencia_admin_chofer.md`](./docs/ux/mapeo_experiencia_admin_chofer.md) |
+| **[#48](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_workitems/edit/48)** | **Diseñar interfaz de administración de pedidos** | *Prototipo permite buscar, crear y revisar pedidos con estado y pago.* | [`frontend/src/views/AdminView.vue`](./frontend/src/views/AdminView.vue) (`/admin`) |
+| **[#49](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_workitems/edit/49)** | **Diseñar interfaz móvil de reparto** | *Prototipo permite ver paradas, confirmar entrega y reportar envases.* | [`frontend/src/views/ChoferView.vue`](./frontend/src/views/ChoferView.vue) (`/chofer`) |
 
-## Flujo operativo esperado
+---
 
-1. Se recibe una solicitud y se identifica al cliente, la dirección y los bidones solicitados.
-2. El equipo confirma el pedido y comunica una promesa de entrega autorizada.
-3. Se registra el pago. Un Webpay aprobado o una transferencia validada habilita el despacho según la política acordada con el cliente del proyecto.
-4. Se comprueba stock y capacidad del vehículo; se asignan carga, ruta y chofer.
-5. El chofer registra lo efectivamente entregado y los envases vacíos recibidos.
-6. El sistema actualiza el pedido y los movimientos de inventario; las diferencias, roturas o devoluciones pendientes quedan trazables.
+## 3. Stack tecnológico
 
-Este flujo es una meta del producto. Las reglas de pagos, retornables, mermas y excepciones deben quedar ratificadas con el cliente antes de considerarse definitivas.
+* **Frontend:** Vue 3 con Vite y TypeScript.
+  * *Panel administrativo:* Módulo web de escritorio con búsqueda, prellenado automático, alertas de envases adeudados y gestión de cobros.
+  * *Vista del chofer:* Progressive Web App (PWA) con diseño *mobile-first*, paradas geográficas, check de entrega en 1 toque y almacenamiento local (*offline-first*).
+* **Backend y base de datos (planificado):** Supabase (PostgreSQL, Row Level Security, Edge Functions).
+* **Integraciones:**
+  * *Pagos digitales:* Webpay Plus de Transbank (confirmación automática).
+  * *Transferencias bancarias:* Carga manual con conmutación automática de cuentas al acumular **45 comprobantes procesados**.
+  * *Notificaciones:* WhatsApp Business Platform / avisos operativos.
 
-## Criterios de éxito del MVP
+---
 
-- Un pedido solo avanza mediante estados válidos y cada transición queda registrada.
-- Un pago rechazado o una confirmación repetida no libera el pedido dos veces; una transferencia mantiene el pedido retenido hasta su aprobación.
-- La carga asignada no supera el stock disponible ni la capacidad configurada del vehículo.
-- La entrega actualiza el pedido y el inventario según cantidades efectivas, incluidos los envases vacíos que regresan.
-- Los movimientos permiten reconstruir los saldos de llenos, vacíos, en tránsito, pendientes y rotos sin doble conteo.
-- El personal administrativo, el chofer y la persona dueña acceden únicamente a las acciones permitidas para su perfil.
-- El flujo integral y los fallos de integraciones se prueban antes del piloto con el cliente.
+## 4. Estructura del repositorio
 
-Estos puntos resumen criterios del backlog; su cumplimiento se verificará con las historias y pruebas correspondientes.
+```text
+.
+├── docs/
+│   └── ux/
+│       └── mapeo_experiencia_admin_chofer.md   # Service Blueprint, FSM de 6 estados y matriz de pantallas (#47)
+├── frontend/                                   # Aplicación Vue 3 + Vite + TypeScript (#48 y #49)
+│   ├── src/
+│   │   ├── types/                              # Interfaces TypeScript del dominio
+│   │   ├── store/                              # Estado reactivo y reglas de negocio del MVP
+│   │   ├── router/                             # Rutas: '/', '/admin', '/chofer'
+│   │   ├── views/
+│   │   │   ├── PortalHub.vue                   # Portal selector del Sprint 1
+│   │   │   ├── AdminView.vue                   # Interfaz de administración de pedidos (#48)
+│   │   │   └── ChoferView.vue                  # Interfaz móvil de chofer (#49)
+│   │   ├── style.css                           # Sistema de diseño y variables CSS
+│   │   ├── App.vue
+│   │   └── main.ts
+│   ├── package.json
+│   └── vite.config.ts
+├── scripts/
+│   ├── ado.js                                  # CLI para consulta y sincronización con Azure Boards
+│   └── azure_devops_mcp.cjs                    # Runner para el servidor MCP de Azure DevOps
+├── update_06Octubre.md                         # Minuta de acuerdos y reglas operacionales de negocio
+├── AGENTS.md                                   # Guía de contexto, arquitectura y convenciones para agentes
+├── .gitignore                                  # Reglas de exclusión de dependencias y secretos
+└── README.md                                   # Documentación principal del proyecto
+```
 
-## Plan de trabajo
+---
 
-El backlog agrupa trabajo de definición, diseño, implementación, pruebas y piloto. Incluye arquitectura y contratos entre módulos web, API, datos, WhatsApp y Webpay; modelos de clientes, pedidos, pagos e inventario; interfaces administrativas y móviles; despacho; notificaciones; pruebas integrales, despliegue y recuperación.
+## 5. Instrucciones de instalación y ejecución local
 
-Como Product Owner, Ignacio Salinas prioriza las historias y valida el alcance y los criterios de aceptación con el equipo y el cliente. El avance real se consulta en [Azure Boards](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_boards/board/t/Proyecto%20Integrado%20Team/Backlog%20items); las fechas o funcionalidades no se consideran comprometidas por aparecer en este README.
+### Requisitos previos
+* Node.js v20 o superior (recomendado Node 22+)
+* npm v10 o superior
 
-## Repositorio
+### Ejecutar el frontend
+```bash
+# 1. Ingresar a la carpeta frontend
+cd frontend
 
-En la versión actual solo se mantiene este README. Cuando se incorporen módulos de software, este documento incluirá la estructura del código, los requisitos de instalación, la configuración de entornos y los pasos para ejecutar las pruebas. La tarea de preparar repositorio, entornos y pipeline está registrada en el [ítem 54 del backlog](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_workitems/edit/54).
+# 2. Instalar dependencias
+npm install
+
+# 3. Iniciar el servidor de desarrollo Vite
+npm run dev
+```
+
+La aplicación quedará disponible en `http://localhost:5173/`:
+* **Portal general:** `http://localhost:5173/`
+* **Panel de administración (Tarea #48):** `http://localhost:5173/admin`
+* **App móvil del chofer (Tarea #49):** `http://localhost:5173/chofer`
+
+### Sincronización con Azure Boards (opcional)
+```bash
+# Consultar el estado de los ítems del Sprint 1
+node scripts/ado.js sprint "Sprint 1"
+
+# Consultar el detalle de una tarea específica
+node scripts/ado.js get 48
+```
