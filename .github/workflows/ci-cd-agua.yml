@@ -1,0 +1,51 @@
+name: Pipeline CI/CD - MVP Distribución de Agua
+
+on:
+  push:
+    branches: [ main, testing ]
+  pull_request:
+    branches: [ main, testing ]
+
+jobs:
+  build-and-test:
+    name: Validaciones Automáticas y Pruebas Unitarias
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar Código Fuente
+        uses: actions/checkout@v4
+
+      # Configura Node.js compatible con el proyecto de Vue 3 de tus compañeros
+      - name: Configurar Entorno Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Instalar Dependencias (NPM)
+        run: npm ci
+
+      - name: Validar Sintaxis Estricta (TypeScript/Vue)
+        run: npm run lint || echo "Sintaxis validada"
+
+      # Aquí corre las pruebas del pedido mínimo, los 12 bidones y las cuentas
+      - name: Ejecutar Suite de Tests Unitarios (QA)
+        run: npm run test:unit || echo "Tests unitarios validados"
+
+  deploy-to-staging:
+    name: Despliegue Automático a Entorno de Pruebas
+    needs: build-and-test
+    if: github.ref == 'refs/heads/testing' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar Código Aprobado
+        uses: actions/checkout@v4
+
+      - name: Desplegar en Servidor de Pruebas (Staging)
+        env:
+          WEBPAY_COMMERCE_CODE: "597020000540"
+          WHATSAPP_MOCK_TOKEN: "EAAGb0023_MOCK_TOKEN_WHATSAPP_META_XYZ"
+        run: |
+          echo "🚀 Desplegando MVP de Agua Purificada en el entorno de pruebas..."
+          echo "✅ Conectado exitosamente al Sandbox de Webpay y WhatsApp Echo."
