@@ -78,16 +78,19 @@ Sistema para coordinar la venta y el reparto de bidones de agua purificada de 20
 * npm v10 o superior
 
 ### Ejecutar el frontend
+Desde la raíz del repositorio (la carpeta que contiene este README):
+
 ```bash
-# 1. Ingresar a la carpeta frontend
-cd frontend
+# 1. Instalar las dependencias del frontend según el archivo de bloqueo
+npm ci --prefix frontend
 
-# 2. Instalar dependencias
-npm install
-
-# 3. Iniciar el servidor de desarrollo Vite
+# 2. Iniciar el servidor de desarrollo Vite
 npm run dev
 ```
+
+Para verificar TypeScript y generar la compilación de producción, ejecutar `npm run build` desde la raíz. Los comandos `npm run dev` y `npm run build` también siguen disponibles dentro de `frontend/`.
+
+Si aparece `Missing script: "dev"`, comprobar que la terminal esté en la raíz del repositorio o dentro de `frontend/`.
 
 La plataforma quedará disponible en `http://localhost:5173/`:
 Al ingresar, se accede de inmediato a la aplicación operativa completa sin intermediarios ni menús de tareas.
