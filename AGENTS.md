@@ -1,5 +1,17 @@
 # Guía para agentes de IA (AGENTS.md)
 
+## 0. Reglas vigentes en esta copia
+
+Las respuestas del cliente incorporadas el 13/10/2026 (PBI 42/43) prevalecen sobre cualquier supuesto histórico de este archivo. Leer `docs/reglas-cliente.md` y `docs/sprint1-trazabilidad.md` antes de cambiar reglas.
+
+- No se cobra garantía ni se mantiene contador general de envases por cliente.
+- Rotos permanecen en total físico y fuera de disponibles; solo el administrador da de baja tras revisión/eliminación física.
+- Pendiente fechado → no retornaron a 30 días → baja por administrador a 60 días. La precisión de evidencia de revisión para pérdidas no recuperadas debe validarse con el cliente.
+- El administrativo puede autorizar un pedido sin retorno; esa decisión no suma stock.
+- Total físico, disponibles y seguimiento lógico de devoluciones son cifras distintas. La fórmula histórica siguiente no debe usarse para presentar envases no recuperados como stock físico disponible.
+- El backend oficial sigue siendo Supabase/PostgreSQL. `backend/` es un adaptador de desarrollo local que ejecuta el modelo SQL de Agustín mediante PGlite mientras se configura Supabase.
+- El store/prototipo original se conserva como fuente, sin ruta activa; no usar su contador de deuda ni sus permisos simulados en la app conectada.
+
 ## 1. Contexto del proyecto
 * **Nombre:** Sistema de gestión y distribución de agua purificada en Chile
 * **Asignatura:** Proyecto Integrado (Analista Programador — INACAP 2026)
