@@ -2580,4 +2580,24 @@ function toggleOffline() {
   color: var(--zun-gris);
   line-height: 1.45;
 }
+
+/* Celular (CP-21): la cabecera pasa a varias filas para no forzar desplazamiento lateral */
+@media (max-width: 640px) {
+  .app-header {
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    gap: 12px;
+  }
+
+  .module-nav {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .header-right {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}
 </style>
