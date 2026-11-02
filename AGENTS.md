@@ -10,7 +10,7 @@ Las respuestas del cliente incorporadas el 13/10/2026 (PBI 42/43) prevalecen sob
 - El administrativo puede autorizar un pedido sin retorno; esa decisión no suma stock.
 - Total físico, disponibles y seguimiento lógico de devoluciones son cifras distintas. La fórmula histórica siguiente no debe usarse para presentar envases no recuperados como stock físico disponible.
 - El backend oficial sigue siendo Supabase/PostgreSQL. `backend/` es un adaptador de desarrollo local que ejecuta el modelo SQL de Agustín mediante PGlite mientras se configura Supabase.
-- El store/prototipo original se conserva como fuente, sin ruta activa; no usar su contador de deuda ni sus permisos simulados en la app conectada.
+- La interfaz de Fabián (`MainAppView.vue` + store original) es la ruta principal `/` y la vista conectada está en `/sistema`; no usar su contador de deuda ni sus permisos simulados en la app conectada.
 
 ## 1. Contexto del proyecto
 * **Nombre:** Sistema de gestión y distribución de agua purificada en Chile
