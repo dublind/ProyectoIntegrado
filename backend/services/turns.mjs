@@ -4,6 +4,7 @@ import { one, rows } from '../shared/database.mjs';
 import { audit, changeState } from '../shared/audit.mjs';
 import { getOrder, enqueueOrder } from './orders.mjs';
 import { getBalance, move } from './inventory.mjs';
+import { notifyDispatch } from './notifications.mjs';
 
 export async function handleTurns(db, user, method, id, action, body) {
   permit(user, 'administrador', 'administrativo');
@@ -103,6 +104,7 @@ async function startTurn(db, user, id, turn) {
       evento: `carga-${id}-${currentOrder.id_pedido}`,
     });
     await changeState(db, user, currentOrder.id_pedido, 'En reparto', 'Carga y salida');
+    await notifyDispatch(db, id, currentOrder.id_pedido);
     await db.query("UPDATE parada SET estado='en_ruta' WHERE id=$1", [stop.id]);
   }
   await db.query("UPDATE turno SET estado='en_ruta' WHERE id=$1", [id]);

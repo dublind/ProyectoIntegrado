@@ -61,6 +61,9 @@ export async function getState(db, user) {
       cuentas: [],
       auditoria: [],
       inconsistencias: [],
+      avisos: [],
+      notificaciones: [],
+      solicitudes: [],
       modo: 'local',
     };
   }
@@ -102,6 +105,24 @@ export async function getState(db, user) {
     cuentas: await rows(db, 'SELECT * FROM cuenta_bancaria ORDER BY id'),
     auditoria: await rows(db, 'SELECT * FROM auditoria ORDER BY id DESC LIMIT 100'),
     inconsistencias: await rows(db, 'SELECT * FROM v_inconsistencias'),
+    // Avisos internos activos para el perfil (el administrador también ve los del administrativo)
+    avisos: await rows(
+      db,
+      `SELECT id, tipo, mensaje, pedido_id, cliente_id, creado, destino
+       FROM notificacion
+       WHERE canal='INTERNO' AND estado <> 'leido' AND destino = ANY($1)
+       ORDER BY creado DESC, id DESC LIMIT 50`,
+      [isAdministrative ? ['administrativo'] : ['administrativo', 'administrador']],
+    ),
+    notificaciones: await rows(
+      db,
+      `SELECT id, tipo, destino, pedido_id, mensaje, estado, intentos, ultimo_error, creado, enviado
+       FROM notificacion WHERE canal='WHATSAPP' ORDER BY id DESC LIMIT 50`,
+    ),
+    solicitudes: await rows(
+      db,
+      "SELECT * FROM solicitud_whatsapp WHERE estado='nueva' ORDER BY recibido, id",
+    ),
     modo: 'local',
   };
 }

@@ -44,5 +44,9 @@ export async function openDatabase({ memory = false, password, dataDir } = {}) {
       }
     });
   }
+  // Cambios posteriores al Sprint 1: idempotentes, se aplican también sobre bases ya creadas
+  for (const file of ['sprint2-avisos.sql']) {
+    await db.exec(await readFile(root + '/database/' + file, 'utf8'));
+  }
   return db;
 }

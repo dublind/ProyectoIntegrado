@@ -66,7 +66,7 @@ class AppStore {
     return this.state.datos ?? {
       user: this.state.usuario as User, clientes: [], direcciones: [], pedidos: [], pagos: [],
       inventario: [], retornos: [], vehiculos: [], turno: null, paradas: [], reportes: [],
-      cuentas: [], auditoria: [], inconsistencias: [], modo: 'local'
+      cuentas: [], auditoria: [], inconsistencias: [], avisos: [], notificaciones: [], solicitudes: [], modo: 'local'
     };
   }
 
@@ -268,6 +268,36 @@ class AppStore {
 
   alertasPendientesCount = computed(() => this.pedidos.value.filter(p => p.tieneAlertaDeuda).length);
 
+  // Avisos internos fechados, mensajes a clientes y solicitudes entrantes por WhatsApp
+  avisos = computed(() => this.datos.avisos ?? []);
+  notificaciones = computed(() => this.datos.notificaciones ?? []);
+  solicitudes = computed(() => this.datos.solicitudes ?? []);
+
+  retirosDeCliente(clienteId: string) {
+    return this.datos.retornos.filter(r => String(r.cliente_id) === clienteId);
+  }
+
+  async marcarAvisoLeido(id: number) {
+    await api(`/notifications/${id}/read`, 'POST', {});
+    await this.cargar();
+  }
+
+  async enviarAvisosPendientes() {
+    const resultado = await api('/notifications/0/dispatch', 'POST', {});
+    await this.cargar();
+    return resultado;
+  }
+
+  async reintentarAviso(id: number) {
+    await api(`/notifications/${id}/retry`, 'POST', {});
+    return this.enviarAvisosPendientes();
+  }
+
+  async descartarSolicitud(id: number) {
+    await api(`/requests/${id}/discard`, 'POST', {});
+    await this.cargar();
+  }
+
   // Sesión
   async iniciarSesion(username: string, password: string) {
     this.state.usuario = await api<User>('/auth/login', 'POST', { username, password });
@@ -310,6 +340,7 @@ class AppStore {
     cantidadBidones: number;
     tipoProducto: string;
     medioPago: MedioPago;
+    solicitudId?: number;
   }) {
     let cliente: Row | undefined = this.datos.clientes.find(c =>
       (datos.clienteId && String(c.id_cliente) === datos.clienteId) || soloDigitos(c.telefono) === soloDigitos(datos.telefono)
@@ -331,7 +362,8 @@ class AppStore {
       id_cliente: idCliente,
       id_direccion: direccion!.id_direccion,
       cantidad: datos.cantidadBidones,
-      tipo_producto: datos.tipoProducto
+      tipo_producto: datos.tipoProducto,
+      solicitud_id: datos.solicitudId
     });
     guardarMedio(pedido.id_pedido, datos.medioPago);
     await this.cargar();
@@ -439,6 +471,20 @@ class AppStore {
       { entregados: n - 1, vacios: n - 1, rotos: 1, aceptacion_parcial: true, detalle },
       'parcial'
     );
+  }
+
+  async retirarEnvases(retornoId: number) {
+    if (!this.state.usuario) return;
+    const path = `/returns/${retornoId}/collect`;
+    if (this.state.modoOffline || !navigator.onLine) {
+      await queue.add({ id: event(), username: this.state.usuario.username, path, body: {} });
+      const indice = this.datos.retornos.findIndex(r => r.id === retornoId);
+      if (indice >= 0) this.datos.retornos.splice(indice, 1);
+      this.state.pendientesSync = (await queue.all()).length;
+      return;
+    }
+    await api(path, 'POST', {});
+    await this.cargar();
   }
 
   async sincronizarCola() {

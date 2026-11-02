@@ -3,12 +3,44 @@ import { text } from '../shared/validation.mjs';
 import { one, rows } from '../shared/database.mjs';
 import { audit } from '../shared/audit.mjs';
 import { getBalance, move } from './inventory.mjs';
+import { notify, resolvePendingReturnAlert } from './notifications.mjs';
 
 export async function ageReturns(db, user) {
-  await db.query(
-    "UPDATE retorno_pendiente SET estado='no_retornaron' WHERE estado='pendiente' AND fecha <= now() - interval '30 days'",
+  const expired = await rows(
+    db,
+    `UPDATE retorno_pendiente r SET estado='no_retornaron'
+     FROM cliente c
+     WHERE c.id_cliente = r.cliente_id AND r.estado='pendiente' AND r.fecha <= now() - interval '30 days'
+     RETURNING r.*, c.nombre`,
   );
+  for (const r of expired) {
+    await notify(db, {
+      evento: `no-retornaron-${r.id}`,
+      tipo: 'NO_RETORNARON',
+      canal: 'INTERNO',
+      destino: 'administrativo',
+      pedido: r.pedido_id,
+      cliente: r.cliente_id,
+      mensaje: `${r.nombre}: ${r.cantidad} envase(s) cumplieron 30 días sin retirarse y pasan a no retornados.`,
+    });
+  }
   // A los 60 días se muestra elegible; solo la acción del administrador ejecuta la baja.
+  const eligible = await rows(
+    db,
+    `SELECT r.*, c.nombre FROM retorno_pendiente r JOIN cliente c ON c.id_cliente = r.cliente_id
+     WHERE r.estado='no_retornaron' AND r.fecha <= now() - interval '60 days'`,
+  );
+  for (const r of eligible) {
+    await notify(db, {
+      evento: `baja-elegible-${r.id}`,
+      tipo: 'BAJA_ELEGIBLE',
+      canal: 'INTERNO',
+      destino: 'administrador',
+      pedido: r.pedido_id,
+      cliente: r.cliente_id,
+      mensaje: `${r.nombre}: ${r.cantidad} envase(s) cumplieron 60 días sin retirarse. Revisa y registra la baja.`,
+    });
+  }
   if (user) {
     await audit(db, user, 'Revisión de plazos', 'retornos');
   }
@@ -78,6 +110,7 @@ async function collectReturn(db, user, id, pendingReturn) {
     [id, user.username],
   );
   await audit(db, user, 'Resolver retiro pendiente', id);
+  await resolvePendingReturnAlert(db, id);
   return { ok: true };
 }
 
@@ -100,6 +133,9 @@ async function writeOffReturn(db, user, id, body, pendingReturn) {
       pendingReturn.cliente_id,
     ],
   );
+  await db.query("UPDATE notificacion SET estado='leido' WHERE evento = ANY($1)", [
+    [`retiro-${id}`, `no-retornaron-${id}`, `baja-elegible-${id}`],
+  ]);
   await audit(db, user, 'Baja de no retornados', id, {
     evidencia: evidence,
     cantidad: pendingReturn.cantidad,

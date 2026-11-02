@@ -5,7 +5,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDatabase, root } from './db.mjs';
 import { execute, ApiError, fail } from './service.mjs';
-export function createServer(db) {
+import { dispatchNotifications } from './services/notifications.mjs';
+import { receiveMessages, verifySignature, verifySubscription } from './services/whatsapp.mjs';
+// options.sender reemplaza el canal de WhatsApp (pruebas); sin él se usan las variables de entorno
+export function createServer(db, options = {}) {
   const sessions = new Map(),
     attempts = new Map();
   return http.createServer(async (req, res) => {
@@ -78,6 +81,22 @@ export function createServer(db) {
           throw new ApiError(400, 'JSON inválido');
         }
       }
+      // Webhook de WhatsApp (Meta): no usa sesión, se valida con token y firma
+      if (url.pathname === '/api/whatsapp/webhook') {
+        if (method === 'GET') {
+          const challenge = verifySubscription(url.searchParams, process.env.WHATSAPP_VERIFY_TOKEN);
+          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+          return res.end(challenge);
+        }
+        fail(method !== 'POST', 'Método no permitido', 405);
+        verifySignature(
+          raw,
+          req.headers['x-hub-signature-256'],
+          process.env.WHATSAPP_APP_SECRET,
+          req.socket.remoteAddress,
+        );
+        return send(200, await db.transaction((tx) => receiveMessages(tx, body)));
+      }
       if (url.pathname === '/api/auth/login') {
         fail(method !== 'POST', 'Método no permitido', 405);
         const key = req.socket.remoteAddress;
@@ -132,6 +151,7 @@ export function createServer(db) {
           method,
           url.pathname,
           method === 'GET' ? Object.fromEntries(url.searchParams) : body,
+          options,
         ),
       );
       return send(200, result);
@@ -176,8 +196,14 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     await unlink(lock).catch(() => {});
     process.exit(1);
   });
+  // Envía los avisos pendientes a clientes cada minuto (con reintentos controlados)
+  const dispatcher = setInterval(() => {
+    dispatchNotifications(db).catch((e) => console.error('Avisos:', e.message));
+  }, 60000);
+  dispatcher.unref();
   const stop = () =>
     server.close(async () => {
+      clearInterval(dispatcher);
       await db.close();
       await unlink(lock).catch(() => {});
       process.exit(0);
