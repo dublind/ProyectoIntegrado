@@ -5,7 +5,7 @@ export interface State {
   user: User; clientes: Row[]; direcciones: Row[]; pedidos: Row[]; pagos: Row[];
   inventario: Row[]; retornos: Row[]; vehiculos: Row[]; turno: Row | null;
   paradas: Row[]; reportes: Row[]; cuentas: Row[]; auditoria: Row[];
-  inconsistencias: Row[]; modo: string;
+  inconsistencias: Row[]; avisos: Row[]; notificaciones: Row[]; solicitudes: Row[]; modo: string;
 }
 export async function api<T=Row>(path: string, method='GET', body?: unknown): Promise<T> {
   const response = await fetch('/api'+path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});

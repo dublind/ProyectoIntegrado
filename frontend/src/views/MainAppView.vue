@@ -115,6 +115,39 @@
           </button>
         </div>
 
+        <!-- Solicitudes entrantes por WhatsApp y avisos internos fechados -->
+        <div v-if="appStore.solicitudes.value.length || appStore.avisos.value.length" class="ops-panels">
+          <div v-if="appStore.solicitudes.value.length" class="card dispatch-queue-card">
+            <h3 class="queue-title">💬 Solicitudes por WhatsApp ({{ appStore.solicitudes.value.length }})</h3>
+            <div class="queue-list">
+              <div v-for="s in appStore.solicitudes.value" :key="s.id" class="queue-item">
+                <div class="q-left">
+                  <span class="font-bold">{{ s.nombre || 'Número nuevo' }} (+{{ s.telefono }})</span>
+                  <span>"{{ s.texto }}"</span>
+                  <span class="text-xs text-muted">{{ formatFecha(s.recibido) }}<template v-if="s.cantidad"> • {{
+                    s.cantidad }} bidón(es) sugeridos</template></span>
+                </div>
+                <div class="action-buttons">
+                  <button @click="pedidoDesdeSolicitud(s)" class="btn btn-primary btn-sm">Crear pedido</button>
+                  <button @click="descartarSolicitud(s.id)" class="btn btn-secondary btn-sm">Descartar</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-if="appStore.avisos.value.length" class="card dispatch-queue-card">
+            <h3 class="queue-title">🔔 Avisos ({{ appStore.avisos.value.length }})</h3>
+            <div class="queue-list">
+              <div v-for="a in appStore.avisos.value" :key="a.id" class="queue-item">
+                <div class="q-left">
+                  <span class="text-xs text-muted font-mono">{{ formatFecha(a.creado) }}</span>
+                  <span>{{ a.mensaje }}</span>
+                </div>
+                <button @click="marcarAvisoLeido(a.id)" class="btn btn-secondary btn-sm">Marcar leído</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Buscador y Filtros -->
         <div class="filter-bar card">
           <div class="search-input-wrapper">
@@ -404,6 +437,12 @@
                     ⚠️ <strong>Retiro pendiente anterior:</strong> Cliente debe entregar {{ parada.deudaEnvasesPendiente
                     }}
                     envase(s) vacío(s).
+                    <div v-if="puedeEntregar" class="pickup-actions">
+                      <button v-for="r in appStore.retirosDeCliente(parada.clienteId)" :key="r.id"
+                        @click="retirarEnvases(r.id)" class="btn btn-secondary btn-sm">
+                        ✓ Retiré {{ r.cantidad }} envase(s) del {{ formatFecha(r.fecha) }}
+                      </button>
+                    </div>
                   </div>
 
                   <!-- Acciones de Entrega en 1 Toque -->
@@ -612,6 +651,37 @@
             </div>
           </div>
         </div>
+
+        <!-- Mensajes a clientes por WhatsApp: estado de envío y reintentos -->
+        <div class="card bank-accounts-card">
+          <div class="bank-card-head">
+            <div>
+              <h3>Mensajes a clientes (WhatsApp)</h3>
+              <p class="text-sm text-muted">
+                Pago recibido, salida a reparto y entrega. Cada mensaje se reintenta hasta 5 veces si WhatsApp falla.
+              </p>
+            </div>
+            <button @click="enviarAvisos" class="btn btn-secondary btn-sm">📤 Enviar pendientes ahora</button>
+          </div>
+          <div v-if="appStore.notificaciones.value.length === 0" class="empty-box">
+            <span>Aún no hay mensajes para clientes.</span>
+          </div>
+          <div v-else class="queue-list">
+            <div v-for="n in appStore.notificaciones.value" :key="n.id" class="queue-item">
+              <div class="q-left">
+                <span class="font-mono text-xs">{{ formatFecha(n.creado) }} • +{{ n.destino }}</span>
+                <span>{{ n.mensaje }}</span>
+                <span v-if="n.ultimo_error" class="text-xs text-muted">Motivo: {{ n.ultimo_error }}</span>
+              </div>
+              <div class="cell-stack">
+                <span :class="['badge', getBadgeAviso(n.estado)]">{{ formatEstadoAviso(n.estado) }} ({{ n.intentos }}/5)</span>
+                <button v-if="n.estado === 'fallido'" @click="reintentarAviso(n.id)" class="btn btn-secondary btn-sm">
+                  Reintentar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
     </main>
@@ -809,6 +879,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { appStore } from '../store/useAppStore';
 import type { Pedido } from '../types';
+import type { Row } from '../services/api';
 
 type Modulo = 'pedidos' | 'despacho' | 'chofer' | 'bodegas';
 
@@ -966,7 +1037,8 @@ const formPedido = ref({
   comuna: 'Providencia',
   cantidadBidones: 2,
   tipoProducto: 'Bidón de agua purificada 20L',
-  medioPago: 'webpay' as 'webpay' | 'transferencia'
+  medioPago: 'webpay' as 'webpay' | 'transferencia',
+  solicitudId: undefined as number | undefined
 });
 
 function formatEstadoLabel(estado: string) {
@@ -1036,7 +1108,8 @@ function abrirModalNuevoPedido() {
     comuna: 'Providencia',
     cantidadBidones: 2,
     tipoProducto: 'Bidón de agua purificada 20L',
-    medioPago: 'webpay'
+    medioPago: 'webpay',
+    solicitudId: undefined
   };
   mostrarModalPedido.value = true;
 }
@@ -1072,10 +1145,64 @@ function guardarNuevoPedido() {
       comuna: formPedido.value.comuna,
       cantidadBidones: formPedido.value.cantidadBidones,
       tipoProducto: formPedido.value.tipoProducto,
-      medioPago: formPedido.value.medioPago
+      medioPago: formPedido.value.medioPago,
+      solicitudId: formPedido.value.solicitudId
     });
     mostrarModalPedido.value = false;
   });
+}
+
+// Solicitud de WhatsApp: abre el pedido con el cliente reconocido o con los datos del mensaje
+function pedidoDesdeSolicitud(solicitud: Row) {
+  abrirModalNuevoPedido();
+  formPedido.value.solicitudId = solicitud.id;
+  if (solicitud.cliente_id) {
+    clienteSeleccionadoId.value = String(solicitud.cliente_id);
+    onClienteSeleccionado();
+  } else {
+    formPedido.value.nombre = solicitud.nombre ?? '';
+    formPedido.value.telefono = '+' + solicitud.telefono;
+  }
+  if (solicitud.cantidad) formPedido.value.cantidadBidones = solicitud.cantidad;
+}
+
+function descartarSolicitud(id: number) {
+  if (confirm('¿Descartar esta solicitud de WhatsApp?')) {
+    void ejecutar(() => appStore.descartarSolicitud(id));
+  }
+}
+
+function marcarAvisoLeido(id: number) {
+  void ejecutar(() => appStore.marcarAvisoLeido(id));
+}
+
+function enviarAvisos() {
+  void ejecutar(async () => {
+    const r = await appStore.enviarAvisosPendientes();
+    if (r.sinCanal) alert(`${r.sinCanal} mensaje(s) siguen pendientes: WhatsApp aún no está configurado en el servidor.`);
+  });
+}
+
+function reintentarAviso(id: number) {
+  void ejecutar(() => appStore.reintentarAviso(id));
+}
+
+function retirarEnvases(retornoId: number) {
+  void ejecutar(() => appStore.retirarEnvases(retornoId));
+}
+
+function formatFecha(valor: unknown) {
+  return valor ? new Date(String(valor)).toLocaleString('es-CL', { timeZone: 'America/Santiago', dateStyle: 'short', timeStyle: 'short' }) : '—';
+}
+
+function formatEstadoAviso(estado: string) {
+  const map: Record<string, string> = { pendiente: 'Pendiente', enviado: 'Enviado', fallido: 'Falló', leido: 'Leído' };
+  return map[estado] || estado;
+}
+
+function getBadgeAviso(estado: string) {
+  const map: Record<string, string> = { pendiente: 'badge-warning', enviado: 'badge-success', fallido: 'badge-danger' };
+  return map[estado] || 'badge-neutral';
 }
 
 function simularWebpay(p: Pedido) {
@@ -1174,6 +1301,19 @@ function toggleOffline() {
 </script>
 
 <style scoped>
+.ops-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.pickup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .login-screen {
   min-height: 100vh;
   display: grid;

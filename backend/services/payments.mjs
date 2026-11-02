@@ -3,6 +3,7 @@ import { integer, text, eventKey } from '../shared/validation.mjs';
 import { one, rows } from '../shared/database.mjs';
 import { audit, changeState } from '../shared/audit.mjs';
 import { getOrder, enqueueOrder } from './orders.mjs';
+import { notifyPaymentApproved } from './notifications.mjs';
 
 export async function handlePayments(db, user, method, id, action, body) {
   permit(user, 'administrador', 'administrativo');
@@ -90,6 +91,11 @@ async function validatePayment(db, user, id, body) {
       currentOrder.entregados === 0
     ) {
       await changeState(db, user, currentOrder.id_pedido, 'Pagado', 'Pago anticipado validado');
+    }
+    if (
+      Number(currentOrder.pagado) >= Number(currentOrder.cantidad * currentOrder.precio_unitario)
+    ) {
+      await notifyPaymentApproved(db, currentOrder.id_pedido, id);
     }
     await enqueueOrder(db, user, currentOrder.id_pedido);
   }

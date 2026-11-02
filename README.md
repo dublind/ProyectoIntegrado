@@ -34,6 +34,7 @@ Sistema para coordinar la venta y el reparto de bidones de agua purificada de 20
   * *Terminal de chofer:* Interfaz móvil para reparto con paradas en orden geográfico, check de entrega en 1 toque y excepciones de botellones.
   * *Bodegas e inventario:* Cuadratura continua bajo la FSM de 6 estados, bodega de rotos y rotación bancaria a los **45 comprobantes**.
 * **Backend local (Sprint 1):** API Node en `backend/` sobre PostgreSQL local (PGlite), con sesiones, permisos por perfil y el SQL de Agustín. La interfaz de Fabián (`MainAppView.vue`, ruta `/`) trabaja sobre esta API: inicio de sesión, módulos por perfil, pedidos, pagos, turnos, entregas (con cola sin conexión) e inventario. La vista técnica anterior sigue en `/sistema` (`SprintAppView.vue`). Detalle en [docs/backend-local.md](./docs/backend-local.md).
+* **Avisos y WhatsApp (Sprint 2):** solicitudes entrantes, avisos a clientes con reintentos y alertas fechadas de retiro pendiente. Ver [docs/whatsapp-avisos.md](./docs/whatsapp-avisos.md).
 * **Backend y base de datos (destino):** Supabase (PostgreSQL, Row Level Security, Edge Functions).
 * **Integraciones:**
   * *Pagos digitales:* Webpay Plus de Transbank (confirmación automática).
