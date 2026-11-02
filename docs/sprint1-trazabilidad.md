@@ -24,7 +24,7 @@ Fuente: Azure Boards, Sprint 1 consultado el 13 de octubre de 2026. Los criterio
 ## Fuentes de código y decisiones
 
 - **Agustín Briceño:** comentario del PBI 52, editado el 7 de octubre. Se conservan el texto de evidencia y el SQL completo en `database/source/`. Sus catálogos, claves INT identity, relaciones, checks de pagos y libro de movimientos se ejecutan en la base local; la extensión es aditiva.
-- **Fabián Jeldes:** repositorio `dublind/ProyectoIntegrado`, commit base `32066b2`, con trabajos 47/48/49. Se conservan `MainAppView.vue`, tipos y store original como prototipo histórico; la ruta principal usa `SprintAppView.vue` y la paleta/estilos globales originales. El store histórico con contador de deuda no se utiliza en la aplicación nueva.
+- **Fabián Jeldes:** repositorio `dublind/ProyectoIntegrado`, commit base `32066b2`, con trabajos 47/48/49. Se conservan `MainAppView.vue`, tipos y store original como prototipo histórico; la ruta principal `/` usa `MainAppView.vue` y la vista conectada `SprintAppView.vue` está en `/sistema` y la paleta/estilos globales originales. El store histórico con contador de deuda no se utiliza en la aplicación nueva.
 - El `AGENTS.md` actualizado del repositorio define Vue 3 y Supabase/PostgreSQL. No se implementó un segundo frontend Next.js ni una API Python, que aparecían en documentación preliminar anterior.
 - La copia local utiliza **PostgreSQL con PGlite** y un servidor Node solo como adaptador de desarrollo. No es una instancia Supabase ni certifica RLS, Auth o Edge Functions en Supabase. La integración oficial queda indicada explícitamente, sin cambiar ningún proyecto remoto.
 
