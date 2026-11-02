@@ -101,6 +101,9 @@ La plataforma quedará disponible en `http://127.0.0.1:5173/`. La primera ejecuc
 
 Si aparece `Missing script: "dev"`, comprobar que la terminal esté en la raíz del repositorio o dentro de `frontend/`.
 
+### Flujo de ramas
+El trabajo se integra con Git Flow: `main` es la versión estable, `develop` la del sprint en curso, y cada tarea va en una rama `feature/` que nace de `develop`. Ver [docs/git-flow.md](./docs/git-flow.md).
+
 ### Sincronización con Azure Boards (opcional)
 ```bash
 # Consultar el estado de los ítems del Sprint 1

@@ -2,11 +2,35 @@ name: Pipeline CI/CD - MVP Distribución de Agua
 
 on:
   push:
-    branches: [ main, testing ]
+    branches: [ main, develop, testing, 'release/**', 'hotfix/**' ]
   pull_request:
-    branches: [ main, testing ]
+    branches: [ main, develop, testing ]
 
 jobs:
+  backend-tests:
+    name: Pruebas del Backend y Compilación
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar Código Fuente
+        uses: actions/checkout@v4
+
+      # El backend usa node:test y PGlite, que exigen Node 22 o superior
+      - name: Configurar Entorno Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar Dependencias (NPM)
+        run: |
+          npm ci
+          npm ci --prefix frontend
+
+      # Sin "|| echo": si una prueba o la compilación falla, el pipeline falla
+      - name: Ejecutar Pruebas del Backend y Compilar el Frontend
+        run: npm run check
+
+
   build-and-test:
     name: Validaciones Automáticas y Pruebas Unitarias
     runs-on: ubuntu-latest
@@ -37,7 +61,7 @@ jobs:
 
   deploy-to-staging:
     name: Despliegue Automático a Entorno de Pruebas
-    needs: build-and-test
+    needs: [ build-and-test, backend-tests ]
     if: github.ref == 'refs/heads/testing' && github.event_name == 'push'
     runs-on: ubuntu-latest
 
