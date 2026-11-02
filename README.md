@@ -33,7 +33,7 @@ Sistema para coordinar la venta y el reparto de bidones de agua purificada de 20
   * *Despacho y furgones:* Control de capacidad por vehículo ($N_{\max}$) y asignación de hojas de ruta.
   * *Terminal de chofer:* Interfaz móvil para reparto con paradas en orden geográfico, check de entrega en 1 toque y excepciones de botellones.
   * *Bodegas e inventario:* Cuadratura continua bajo la FSM de 6 estados, bodega de rotos y rotación bancaria a los **45 comprobantes**.
-* **Backend local (Sprint 1):** API Node en `backend/` sobre PostgreSQL local (PGlite), con sesiones, permisos por perfil y el SQL de Agustín. La interfaz conectada está en `SprintAppView.vue`. Detalle en [docs/backend-local.md](./docs/backend-local.md).
+* **Backend local (Sprint 1):** API Node en `backend/` sobre PostgreSQL local (PGlite), con sesiones, permisos por perfil y el SQL de Agustín. La interfaz de Fabián (`MainAppView.vue`) es la ruta principal `/`; la vista conectada a la API está en `/sistema` (`SprintAppView.vue`). Detalle en [docs/backend-local.md](./docs/backend-local.md).
 * **Backend y base de datos (destino):** Supabase (PostgreSQL, Row Level Security, Edge Functions).
 * **Integraciones:**
   * *Pagos digitales:* Webpay Plus de Transbank (confirmación automática).
@@ -100,6 +100,9 @@ La plataforma quedará disponible en `http://127.0.0.1:5173/`. La primera ejecuc
 * `npm run build`: compilación de producción del frontend.
 
 Si aparece `Missing script: "dev"`, comprobar que la terminal esté en la raíz del repositorio o dentro de `frontend/`.
+
+### Flujo de ramas
+El trabajo se integra con Git Flow: `main` es la versión estable, `develop` la del sprint en curso, y cada tarea va en una rama `feature/` que nace de `develop`. Ver [docs/git-flow.md](./docs/git-flow.md).
 
 ### Sincronización con Azure Boards (opcional)
 ```bash

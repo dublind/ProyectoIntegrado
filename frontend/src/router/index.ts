@@ -1,12 +1,19 @@
 import { createRouter, createWebHistory } from 'vue-router';
+import MainAppView from '../views/MainAppView.vue';
 import SprintAppView from '../views/SprintAppView.vue';
 
 const routes = [
   {
     path: '/',
     name: 'MainApp',
-    component: SprintAppView,
+    component: MainAppView,
     meta: { title: 'Sistema de gestión y distribución de agua purificada' }
+  },
+  {
+    path: '/sistema',
+    name: 'SprintApp',
+    component: SprintAppView,
+    meta: { title: 'Sistema conectado al backend local' }
   },
   {
     path: '/admin',
