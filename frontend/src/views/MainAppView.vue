@@ -1,5 +1,30 @@
 <template>
-  <div class="app-layout">
+  <!-- Inicio de sesión contra el backend local -->
+  <div v-if="!appStore.state.usuario" class="login-screen">
+    <form class="card login-card" @submit.prevent="iniciarSesion">
+      <div class="header-brand-section">
+        <div class="brand-logo">💧</div>
+        <div class="brand-text">
+          <span class="brand-title">Aguas purificadas</span>
+          <span class="brand-sub">Sistema de gestión y reparto</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Usuario:</label>
+        <input v-model="loginForm.username" type="text" autocomplete="username" required />
+      </div>
+      <div class="form-group">
+        <label>Contraseña:</label>
+        <input v-model="loginForm.password" type="password" autocomplete="current-password" required />
+      </div>
+      <p v-if="loginError" class="login-error">{{ loginError }}</p>
+      <button type="submit" class="btn btn-primary" :disabled="procesando">Entrar</button>
+      <span class="text-xs text-muted">Usuarios: ignacio (administrador), administrativo y chofer. Contraseñas en
+        .local/credenciales.txt</span>
+    </form>
+  </div>
+
+  <div v-else class="app-layout">
     <!-- Barra Superior Principal de la Plataforma -->
     <header class="app-header">
       <div class="header-brand-section">
@@ -12,12 +37,12 @@
 
       <!-- Navegación por Módulos Operativos -->
       <nav class="module-nav">
-        <button :class="['nav-btn', { active: moduloActivo === 'pedidos' }]" @click="moduloActivo = 'pedidos'">
+        <button v-if="modulosVisibles.includes('pedidos')" :class="['nav-btn', { active: moduloActivo === 'pedidos' }]" @click="moduloActivo = 'pedidos'">
           <span class="nav-icon">📋</span>
           <span>Pedidos y ventas</span>
         </button>
 
-        <button :class="['nav-btn', { active: moduloActivo === 'despacho' }]" @click="moduloActivo = 'despacho'">
+        <button v-if="modulosVisibles.includes('despacho')" :class="['nav-btn', { active: moduloActivo === 'despacho' }]" @click="moduloActivo = 'despacho'">
           <span class="nav-icon">🚚</span>
           <span>Despacho y furgones</span>
           <span v-if="pedidosPorDespacharCount > 0" class="nav-pill">{{ pedidosPorDespacharCount }}</span>
@@ -29,23 +54,23 @@
           <span class="nav-pill-dot" v-if="paradasPendientesChofer > 0"></span>
         </button>
 
-        <button :class="['nav-btn', { active: moduloActivo === 'bodegas' }]" @click="moduloActivo = 'bodegas'">
+        <button v-if="modulosVisibles.includes('bodegas')" :class="['nav-btn', { active: moduloActivo === 'bodegas' }]" @click="moduloActivo = 'bodegas'">
           <span class="nav-icon">🏭</span>
           <span>Bodegas e inventario</span>
-          <span v-if="appStore.state.inventario.rotosBodega > 0" class="nav-pill pill-danger">{{
-            appStore.state.inventario.rotosBodega }} rotos</span>
+          <span v-if="appStore.inventario.value.rotosBodega > 0" class="nav-pill pill-danger">{{
+            appStore.inventario.value.rotosBodega }} rotos</span>
         </button>
       </nav>
 
       <!-- Perfil Operativo y Stock Global -->
       <div class="header-right">
         <!-- Stock Global Rápido -->
-        <div class="stock-pill" title="Ecuación de cuadratura continua de stock">
+        <div v-if="!esChofer" class="stock-pill" title="Ecuación de cuadratura continua de stock">
           <span class="stock-dot"></span>
           <span class="stock-label">Stock total:</span>
           <strong>{{ appStore.totalStockContinuo.value }}</strong>
-          <span class="stock-breakdown">({{ appStore.state.inventario.llenosCentral }} llenos • {{
-            appStore.state.inventario.enTransito }} en ruta)</span>
+          <span class="stock-breakdown">({{ appStore.inventario.value.llenosCentral }} llenos • {{
+            appStore.inventario.value.enTransito }} en ruta)</span>
         </div>
 
         <!-- Usuario Operativo -->
@@ -55,6 +80,7 @@
             <span class="profile-name">{{ usuarioActual.nombre }}</span>
             <span class="profile-role">{{ usuarioActual.rol }}</span>
           </div>
+          <button @click="cerrarSesion" class="btn btn-secondary btn-sm" title="Cerrar sesión">Salir</button>
         </div>
       </div>
     </header>
@@ -126,8 +152,11 @@
                   <div class="cell-stack">
                     <span class="font-bold">{{ p.clienteNombre }}</span>
                     <span class="text-sm text-muted">{{ p.telefono }}</span>
-                    <span v-if="p.tieneAlertaDeuda" class="badge badge-warning">
-                      ⚠️ Debe {{ p.deudaEnvasesPendiente }} envase(s)
+                    <span v-if="p.deudaEnvasesPendiente > 0" class="badge badge-warning">
+                      ⚠️ Retiro pendiente: {{ p.deudaEnvasesPendiente }} envase(s)
+                    </span>
+                    <span v-if="p.autorizacion === 'PENDIENTE'" class="badge badge-danger">
+                      Requiere autorización (no retornados)
                     </span>
                   </div>
                 </td>
@@ -170,8 +199,15 @@
                       </button>
                     </template>
 
+                    <!-- Cliente con no retornados: lo autoriza el administrativo tras coordinar por WhatsApp -->
+                    <button v-if="p.autorizacion === 'PENDIENTE' && esAdministrativo" @click="autorizarPedido(p)"
+                      class="btn btn-secondary btn-sm">
+                      ✅ Autorizar
+                    </button>
+
                     <!-- Si está pagado, asignar directamente a despacho -->
-                    <button v-if="p.estado === 'pagado'" @click="asignarDespacho(p)" class="btn btn-primary btn-sm">
+                    <button v-if="appStore.pedidosPorAsignar.value.some(x => x.id === p.id) && turnoEnPreparacion"
+                      @click="asignarDespacho(p)" class="btn btn-primary btn-sm">
                       🚚 Asignar a ruta
                     </button>
 
@@ -202,12 +238,25 @@
               de
               reparto.</p>
           </div>
+          <div class="top-section-actions">
+            <span class="badge badge-primary">{{ etiquetaTurno }}</span>
+            <button v-if="turno.estado === 'sin_turno'" @click="abrirTurno" class="btn btn-primary btn-sm">
+              + Abrir turno de reparto
+            </button>
+            <button v-if="turnoEnPreparacion && turno.vehiculoId && turno.botellonesCargados > 0" @click="iniciarRuta"
+              class="btn btn-primary btn-sm">
+              🚚 Cargar y salir a ruta
+            </button>
+            <button v-if="turnoEnRuta" @click="liquidarFurgon" class="btn btn-success btn-sm">
+              📥 Cerrar turno y descargar furgón
+            </button>
+          </div>
         </div>
 
         <!-- Tarjetas de Furgones Disponibles -->
         <div class="fleet-grid">
-          <div v-for="v in appStore.state.vehiculos" :key="v.id" class="card fleet-card"
-            :class="{ 'card-active-truck': v.id === appStore.state.turnoActivo.vehiculoId }">
+          <div v-for="v in appStore.vehiculos.value" :key="v.id" class="card fleet-card"
+            :class="{ 'card-active-truck': v.id === appStore.turnoActivo.value.vehiculoId }">
             <div class="fleet-card-header">
               <span class="truck-icon">🚚</span>
               <div>
@@ -220,11 +269,11 @@
             <div class="fleet-capacity-section">
               <div class="cap-header">
                 <span>Carga asignada:</span>
-                <strong>{{ appStore.state.turnoActivo.botellonesCargados }} / {{ v.capacidadMax }} botellones</strong>
+                <strong>{{ cargaDelVehiculo(v.id) }} / {{ v.capacidadMax }} botellones</strong>
               </div>
               <div class="cap-bar">
                 <div class="cap-fill"
-                  :style="{ width: `${Math.min(100, (appStore.state.turnoActivo.botellonesCargados / v.capacidadMax) * 100)}%` }">
+                  :style="{ width: `${Math.min(100, (cargaDelVehiculo(v.id) / v.capacidadMax) * 100)}%` }">
                 </div>
               </div>
               <span class="cap-sub">Capacidad máxima parametrizable (N_max)</span>
@@ -232,7 +281,11 @@
 
             <div class="fleet-footer">
               <span>Chofer asignado: <strong>{{ v.choferAsignado }}</strong></span>
-              <button @click="moduloActivo = 'chofer'" class="btn btn-secondary btn-sm">
+              <button v-if="turnoEnPreparacion && v.id !== turno.vehiculoId" @click="usarVehiculo(v.id)"
+                class="btn btn-secondary btn-sm">
+                Usar en este turno
+              </button>
+              <button v-else @click="moduloActivo = 'chofer'" class="btn btn-secondary btn-sm">
                 Ver terminal en ruta &rarr;
               </button>
             </div>
@@ -244,6 +297,9 @@
           <h3 class="queue-title">Pedidos pagados listos para asignar a ruta</h3>
           <div v-if="pedidosListosParaRuta.length === 0" class="empty-box">
             <span>✅ Todos los pedidos pagados ya han sido asignados a las hojas de ruta.</span>
+          </div>
+          <div v-else-if="!turnoEnPreparacion" class="empty-box">
+            <span>Abre un turno de reparto para asignar estos pedidos al furgón.</span>
           </div>
           <div v-else class="queue-list">
             <div v-for="ped in pedidosListosParaRuta" :key="ped.id" class="queue-item">
@@ -287,8 +343,10 @@
                 <span :class="['dot-indicator', { 'dot-offline': appStore.state.modoOffline }]"></span>
                 <span>{{ appStore.state.modoOffline ? 'Modo offline (almacenamiento local)' : 'Online (conectado)'
                   }}</span>
+                <span v-if="appStore.state.pendientesSync > 0">• {{ appStore.state.pendientesSync }} por
+                  sincronizar</span>
               </div>
-              <span class="badge badge-primary">Turno {{ appStore.state.turnoActivo.turno }}</span>
+              <span class="badge badge-primary">{{ etiquetaTurno }}</span>
             </div>
 
             <!-- Resumen de Carga del Chofer -->
@@ -315,6 +373,10 @@
                 <h2>Paradas en orden geográfico</h2>
                 <span>{{ paradasCompletadas }} / {{ paradasTotales }} completadas</span>
               </div>
+              <p v-if="paradasTotales === 0" class="empty-box">No hay paradas asignadas a tu ruta.</p>
+              <p v-else-if="!esChofer" class="empty-box">Vista de seguimiento: solo el chofer registra entregas.</p>
+              <p v-else-if="!turnoEnRuta" class="empty-box">El turno aún no sale a ruta; las entregas se habilitan
+                cuando administración cargue el furgón.</p>
 
               <div class="stops-cards">
                 <div v-for="(parada, idx) in paradasOrdenadas" :key="parada.id" :class="['stop-item-card', {
@@ -334,8 +396,7 @@
 
                   <div class="stop-chips">
                     <span class="chip-bidones">💧 {{ parada.cantidadBidones }} botellones</span>
-                    <span class="chip-paid">{{ parada.medioPago === 'webpay' ? '✅ Pagado Webpay' : '✅ Pagado transf.'
-                      }}</span>
+                    <span class="chip-paid">✅ Pagado</span>
                   </div>
 
                   <!-- Alerta si adeuda envase de despacho anterior -->
@@ -346,7 +407,7 @@
                   </div>
 
                   <!-- Acciones de Entrega en 1 Toque -->
-                  <div v-if="parada.estado === 'en_despacho'" class="stop-actions-grid">
+                  <div v-if="parada.estado === 'en_despacho' && puedeEntregar" class="stop-actions-grid">
                     <button @click="confirmarEntregaChofer(parada)" class="btn btn-success btn-touch-main">
                       ✓ Confirmar entrega
                     </button>
@@ -363,7 +424,8 @@
 
                   <!-- Estado Finalizado -->
                   <div v-else class="stop-result-summary">
-                    <span v-if="parada.estado === 'entregado'">✓ Entrega realizada con éxito</span>
+                    <span v-if="parada.estado === 'en_despacho'">🚚 Por entregar</span>
+                    <span v-else-if="parada.estado === 'entregado'">✓ Entrega realizada con éxito</span>
                     <span v-else-if="parada.estado === 'ausente'">❌ Cliente ausente en visita</span>
                     <span v-else-if="parada.estado === 'parcial'">⚠️ Entrega parcial registrada</span>
                     <span v-if="parada.incidencia" class="incidencia-sub">
@@ -388,11 +450,8 @@
               supervisión de cuentas bancarias.</p>
           </div>
           <div class="top-section-actions">
-            <button @click="appStore.sincronizarInventario()" class="btn btn-secondary btn-sm">
+            <button @click="sincronizar" class="btn btn-secondary btn-sm">
               🔄 Sincronizar cuadratura
-            </button>
-            <button @click="appStore.resetDemoData()" class="btn btn-secondary btn-sm">
-              ↺ Restablecer datos demo
             </button>
           </div>
         </div>
@@ -401,7 +460,7 @@
         <div class="inventory-grid">
           <div class="card inv-card" title="Botellones llenos sanitizados en bodega central">
             <span class="inv-title">Bodega central (llenos)</span>
-            <div class="inv-val text-primary">{{ appStore.state.inventario.llenosCentral }} <span
+            <div class="inv-val text-primary">{{ appStore.inventario.value.llenosCentral }} <span
                 class="unit">unid.</span>
             </div>
             <span class="inv-sub">Sanitizados y sellados para despacho</span>
@@ -409,7 +468,7 @@
 
           <div class="card inv-card" title="Botellones vacíos disponibles para lavado y rellenado">
             <span class="inv-title">Bodega central (vacíos)</span>
-            <div class="inv-val text-success">{{ appStore.state.inventario.vaciosCentral }} <span
+            <div class="inv-val text-success">{{ appStore.inventario.value.vaciosCentral }} <span
                 class="unit">unid.</span>
             </div>
             <span class="inv-sub">Disponibles para lavado y rellenado</span>
@@ -417,27 +476,27 @@
 
           <div class="card inv-card" title="Botellones a bordo del furgón de Pedro Chofer">
             <span class="inv-title">En tránsito (furgón)</span>
-            <div class="inv-val text-primary">{{ appStore.state.inventario.enTransito }} <span class="unit">unid.</span>
+            <div class="inv-val text-primary">{{ appStore.inventario.value.enTransito }} <span class="unit">unid.</span>
             </div>
             <span class="inv-sub">A bordo del vehículo de reparto</span>
           </div>
 
-          <div class="card inv-card" :class="{ 'inv-alert': appStore.state.inventario.pendientesDevolucion > 0 }"
-            title="Botellones adeudados por clientes en pedidos anteriores">
-            <span class="inv-title">Pendientes (deuda clientes)</span>
-            <div class="inv-val text-warning">{{ appStore.state.inventario.pendientesDevolucion }} <span
+          <div class="card inv-card" :class="{ 'inv-alert': appStore.inventario.value.pendientesDevolucion > 0 }"
+            title="Envases vacíos por retirar donde clientes de entregas anteriores">
+            <span class="inv-title">Pendientes (retiro en clientes)</span>
+            <div class="inv-val text-warning">{{ appStore.inventario.value.pendientesDevolucion }} <span
                 class="unit">unid.</span></div>
             <span class="inv-sub">Auto-programados para retiro en próximo pedido</span>
           </div>
 
-          <div class="card inv-card" :class="{ 'inv-danger': appStore.state.inventario.rotosBodega > 0 }"
+          <div class="card inv-card" :class="{ 'inv-danger': appStore.inventario.value.rotosBodega > 0 }"
             title="Botellones rotos o fisurados que requieren baja física de Erick">
             <span class="inv-title">Bodega de rotos (mermas)</span>
-            <div class="inv-val text-danger">{{ appStore.state.inventario.rotosBodega }} <span class="unit">unid.</span>
+            <div class="inv-val text-danger">{{ appStore.inventario.value.rotosBodega }} <span class="unit">unid.</span>
             </div>
             <div class="inv-action">
               <span>Baja física autorizada solo por Erick</span>
-              <button v-if="appStore.state.inventario.rotosBodega > 0" @click="autorizarBajaRoto"
+              <button v-if="appStore.inventario.value.rotosBodega > 0 && esAdministrador" @click="autorizarBajaRoto"
                 class="btn btn-secondary btn-sm mt-2">
                 Autorizar baja física
               </button>
@@ -452,11 +511,11 @@
               <span class="badge badge-primary">Sincronización operacional activa</span>
               <h3 class="sync-heading">Ecuación continua de stock sincronizada en tiempo real</h3>
               <p class="text-sm text-muted">
-                Cuadratura verificada: Bodega central ({{ appStore.state.inventario.llenosCentral }} llenos + {{
-                  appStore.state.inventario.vaciosCentral }} vacíos) + Furgón en ruta ({{
-                  appStore.state.inventario.enTransito
-                }}) + Clientes deudores ({{ appStore.state.inventario.pendientesDevolucion }}) + Mermas ({{
-                  appStore.state.inventario.rotosBodega }}).
+                Cuadratura verificada: Bodega central ({{ appStore.inventario.value.llenosCentral }} llenos + {{
+                  appStore.inventario.value.vaciosCentral }} vacíos) + Furgón en ruta ({{
+                  appStore.inventario.value.enTransito
+                }}) + Retiros pendientes ({{ appStore.inventario.value.pendientesDevolucion }}) + Mermas ({{
+                  appStore.inventario.value.rotosBodega }}).
               </p>
             </div>
           </div>
@@ -464,27 +523,27 @@
           <!-- Desglose de la ecuación matemática continua -->
           <div class="equation-strip">
             <div class="eq-item">
-              <span class="eq-num text-primary">{{ appStore.state.inventario.llenosCentral }}</span>
+              <span class="eq-num text-primary">{{ appStore.inventario.value.llenosCentral }}</span>
               <span class="eq-lbl">Llenos central</span>
             </div>
             <span class="eq-op">+</span>
             <div class="eq-item">
-              <span class="eq-num text-success">{{ appStore.state.inventario.vaciosCentral }}</span>
+              <span class="eq-num text-success">{{ appStore.inventario.value.vaciosCentral }}</span>
               <span class="eq-lbl">Vacíos central</span>
             </div>
             <span class="eq-op">+</span>
             <div class="eq-item" title="Sincronizado con Despacho y Chofer">
-              <span class="eq-num text-primary">{{ appStore.state.inventario.enTransito }}</span>
+              <span class="eq-num text-primary">{{ appStore.inventario.value.enTransito }}</span>
               <span class="eq-lbl">En furgón (ruta)</span>
             </div>
             <span class="eq-op">+</span>
             <div class="eq-item" title="Sincronizado con Ficha Clientes y Pedidos">
-              <span class="eq-num text-warning">{{ appStore.state.inventario.pendientesDevolucion }}</span>
-              <span class="eq-lbl">Deuda clientes</span>
+              <span class="eq-num text-warning">{{ appStore.inventario.value.pendientesDevolucion }}</span>
+              <span class="eq-lbl">Retiro pendiente</span>
             </div>
             <span class="eq-op">+</span>
             <div class="eq-item">
-              <span class="eq-num text-danger">{{ appStore.state.inventario.rotosBodega }}</span>
+              <span class="eq-num text-danger">{{ appStore.inventario.value.rotosBodega }}</span>
               <span class="eq-lbl">Rotos (mermas)</span>
             </div>
             <span class="eq-op">=</span>
@@ -501,11 +560,11 @@
               <span>Al terminar la ruta, descarga los vacíos recolectados a bodega central o recarga en planta.</span>
             </div>
             <div class="op-btns">
-              <button v-if="appStore.state.inventario.enTransito > 0" @click="liquidarFurgon"
+              <button v-if="turnoEnRuta" @click="liquidarFurgon"
                 class="btn btn-success btn-sm">
                 📥 Liquidar retorno de furgón (descargar vacíos a bodega central)
               </button>
-              <button v-if="appStore.state.inventario.vaciosCentral >= 10" @click="appStore.sanitizarYRecargar(10)"
+              <button v-if="appStore.inventario.value.vaciosCentral > 0 && esAdministrador" @click="recargarEnPlanta"
                 class="btn btn-secondary btn-sm">
                 💧 Sanitizar y rellenar 10 vacíos en planta
               </button>
@@ -528,7 +587,7 @@
           </div>
 
           <div class="accounts-list">
-            <div v-for="cta in appStore.state.cuentasBancarias" :key="cta.id"
+            <div v-for="cta in appStore.cuentasBancarias.value" :key="cta.id"
               :class="['account-row', { 'is-active-account': cta.activa }]">
               <div class="acc-info">
                 <div class="acc-title-line">
@@ -536,8 +595,8 @@
                   <span v-if="cta.activa" class="badge badge-success">Cuenta activa</span>
                   <span v-else class="badge badge-neutral">En espera</span>
                 </div>
-                <span class="text-sm font-mono">{{ cta.tipoCuenta }} • {{ cta.numeroCuenta }} (RUT: {{ cta.rut
-                  }})</span>
+                <span class="text-sm font-mono">{{ cta.tipoCuenta }} • {{ cta.numeroCuenta }}<template v-if="cta.rut">
+                    (RUT: {{ cta.rut }})</template></span>
               </div>
 
               <!-- Barra de progreso de los 45 vouchers -->
@@ -573,8 +632,8 @@
             <label>Seleccionar cliente frecuente (prellenado automático):</label>
             <select v-model="clienteSeleccionadoId" @change="onClienteSeleccionado">
               <option value="">-- Nuevo cliente / Escribir manualmente --</option>
-              <option v-for="c in appStore.state.clientes" :key="c.id" :value="c.id">
-                {{ c.nombre }} ({{ c.telefono }}) {{ c.deudaEnvases > 0 ? `[⚠️ Debe ${c.deudaEnvases} envases]` : '' }}
+              <option v-for="c in appStore.clientes.value" :key="c.id" :value="c.id">
+                {{ c.nombre }} ({{ c.telefono }}) {{ c.deudaEnvases > 0 ? `[⚠️ Retiro pendiente: ${c.deudaEnvases}]` : '' }}
               </option>
             </select>
           </div>
@@ -584,7 +643,7 @@
             <div class="warn-icon">⚠️</div>
             <div>
               <strong>Alerta de botellones pendientes:</strong>
-              <p>Este cliente adeuda <strong>{{ deudaClienteDetectada }} botellón(es)</strong> no retornados de entregas
+              <p>Este cliente tiene <strong>{{ deudaClienteDetectada }} envase(s)</strong> por retirar de entregas
                 previas. Recuerda coordinar por WhatsApp el retorno antes de entregar el nuevo pedido.</p>
             </div>
           </div>
@@ -686,7 +745,7 @@
               <div class="opt-icon">📦</div>
               <div class="opt-text">
                 <strong>Botellón pendiente</strong>
-                <span>Cliente no tiene el envase vacío. Se entrega el agua y se registra la deuda en el sistema.</span>
+                <span>Cliente no tiene el envase vacío. Se entrega el agua y queda registrado el retiro pendiente.</span>
               </div>
             </button>
 
@@ -747,29 +806,83 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { appStore } from '../store/useAppStore';
 import type { Pedido } from '../types';
 
-// Módulo activo en la aplicación unificada
-const moduloActivo = ref<'pedidos' | 'despacho' | 'chofer' | 'bodegas'>('pedidos');
+type Modulo = 'pedidos' | 'despacho' | 'chofer' | 'bodegas';
 
-// Usuario según el módulo
-const usuarioActual = computed(() => {
-  if (moduloActivo.value === 'chofer') {
-    return { nombre: 'Pedro Chofer', rol: 'Repartidor en terreno', avatar: '🚚' };
-  } else if (moduloActivo.value === 'bodegas') {
-    return { nombre: 'Erick Operaciones', rol: 'Administrador / Dueño', avatar: '👔' };
+// Módulo activo en la aplicación unificada
+const moduloActivo = ref<Modulo>('pedidos');
+
+// Sesión contra el backend local
+const loginForm = ref({ username: 'ignacio', password: '' });
+const loginError = ref('');
+const procesando = ref(false);
+
+const usuarioActual = computed(() => appStore.usuarioActual.value);
+const esChofer = computed(() => appStore.rol.value === 'chofer');
+const esAdministrador = computed(() => appStore.rol.value === 'administrador');
+const esAdministrativo = computed(() => appStore.rol.value === 'administrativo');
+
+// El chofer solo ve su terminal; administración ve todos los módulos
+const modulosVisibles = computed<Modulo[]>(() =>
+  esChofer.value ? ['chofer'] : ['pedidos', 'despacho', 'chofer', 'bodegas']
+);
+
+function irAModuloInicial() {
+  moduloActivo.value = esChofer.value ? 'chofer' : 'pedidos';
+}
+
+async function iniciarSesion() {
+  loginError.value = '';
+  procesando.value = true;
+  try {
+    await appStore.iniciarSesion(loginForm.value.username, loginForm.value.password);
+    loginForm.value.password = '';
+    irAModuloInicial();
+  } catch (err: any) {
+    loginError.value = err.message;
+  } finally {
+    procesando.value = false;
   }
-  return { nombre: '', rol: 'Secretaría / Ventas', avatar: 'X' };
+}
+
+async function cerrarSesion() {
+  await ejecutar(() => appStore.cerrarSesion());
+}
+
+// Ejecuta una acción del backend y muestra su error tal como lo explica el servidor
+async function ejecutar(accion: () => Promise<unknown>) {
+  if (procesando.value) return;
+  procesando.value = true;
+  try {
+    await accion();
+  } catch (err: any) {
+    alert(err.message);
+  } finally {
+    procesando.value = false;
+  }
+}
+
+function alVolverLaRed() {
+  if (appStore.state.usuario && !appStore.state.modoOffline) void ejecutar(() => appStore.sincronizarCola());
+}
+
+onMounted(async () => {
+  window.addEventListener('online', alVolverLaRed);
+  await appStore.restaurarSesion();
+  if (appStore.state.usuario) irAModuloInicial();
 });
+
+onUnmounted(() => window.removeEventListener('online', alVolverLaRed));
 
 // Filtros de Pedidos
 const filtroBusqueda = ref('');
 const filtroEstado = ref('todos');
 
 const pedidosFiltrados = computed(() => {
-  return appStore.state.pedidos.filter(p => {
+  return appStore.pedidos.value.filter(p => {
     const matchFiltro = filtroEstado.value === 'todos' || p.estado === filtroEstado.value;
     const q = filtroBusqueda.value.toLowerCase().trim();
     const matchQuery = !q ||
@@ -781,13 +894,35 @@ const pedidosFiltrados = computed(() => {
   });
 });
 
-const pedidosPorDespacharCount = computed(() => {
-  return appStore.state.pedidos.filter(p => p.estado === 'pagado').length;
-});
+const pedidosPorDespacharCount = computed(() => appStore.pedidosPorAsignar.value.length);
 
-const pedidosListosParaRuta = computed(() => {
-  return appStore.state.pedidos.filter(p => p.estado === 'pagado');
-});
+const pedidosListosParaRuta = computed(() => appStore.pedidosPorAsignar.value);
+
+// Turno de despacho
+const turno = computed(() => appStore.turnoActivo.value);
+const turnoEnPreparacion = computed(() => turno.value.estado === 'preparacion');
+const turnoEnRuta = computed(() => turno.value.estado === 'en_ruta');
+const puedeEntregar = computed(() => esChofer.value && turnoEnRuta.value);
+
+function formatEstadoTurno(estado: string) {
+  const map: Record<string, string> = {
+    sin_turno: 'sin turno abierto',
+    preparacion: 'en preparación',
+    en_ruta: 'en ruta',
+    finalizado: 'finalizado'
+  };
+  return map[estado] || estado;
+}
+
+const etiquetaTurno = computed(() =>
+  turno.value.estado === 'sin_turno'
+    ? 'Sin turno abierto'
+    : `Turno ${turno.value.turno} • ${formatEstadoTurno(turno.value.estado)}`
+);
+
+function cargaDelVehiculo(vehiculoId: string) {
+  return vehiculoId === turno.value.vehiculoId ? turno.value.botellonesCargados : 0;
+}
 
 // Métricas de Chofer
 const paradasOrdenadas = computed(() => appStore.pedidosDespachoActivo.value);
@@ -804,7 +939,7 @@ const botellonesPorEntregar = computed(() => {
 
 const envasesVaciosRecolectados = computed(() => {
   return paradasOrdenadas.value
-    .filter(p => p.estado === 'entregado')
+    .filter(p => p.estado === 'entregado' && p.incidencia?.tipo !== 'pendiente')
     .reduce((sum, p) => sum + p.cantidadBidones, 0);
 });
 
@@ -830,7 +965,7 @@ const formPedido = ref({
   direccion: '',
   comuna: 'Providencia',
   cantidadBidones: 2,
-  tipoProducto: 'Agua Purificada 20L Sellada',
+  tipoProducto: 'Bidón de agua purificada 20L',
   medioPago: 'webpay' as 'webpay' | 'transferencia'
 });
 
@@ -900,7 +1035,7 @@ function abrirModalNuevoPedido() {
     direccion: '',
     comuna: 'Providencia',
     cantidadBidones: 2,
-    tipoProducto: 'Agua Purificada 20L Sellada',
+    tipoProducto: 'Bidón de agua purificada 20L',
     medioPago: 'webpay'
   };
   mostrarModalPedido.value = true;
@@ -911,7 +1046,7 @@ function onClienteSeleccionado() {
     deudaClienteDetectada.value = 0;
     return;
   }
-  const cli = appStore.state.clientes.find(c => c.id === clienteSeleccionadoId.value);
+  const cli = appStore.clientes.value.find(c => c.id === clienteSeleccionadoId.value);
   if (cli) {
     formPedido.value.clienteId = cli.id;
     formPedido.value.nombre = cli.nombre;
@@ -928,21 +1063,23 @@ function onClienteSeleccionado() {
 }
 
 function guardarNuevoPedido() {
-  appStore.crearPedido({
-    clienteId: formPedido.value.clienteId || undefined,
-    nombre: formPedido.value.nombre,
-    telefono: formPedido.value.telefono,
-    direccion: formPedido.value.direccion,
-    comuna: formPedido.value.comuna,
-    cantidadBidones: formPedido.value.cantidadBidones,
-    tipoProducto: formPedido.value.tipoProducto,
-    medioPago: formPedido.value.medioPago
+  void ejecutar(async () => {
+    await appStore.crearPedido({
+      clienteId: formPedido.value.clienteId || undefined,
+      nombre: formPedido.value.nombre,
+      telefono: formPedido.value.telefono,
+      direccion: formPedido.value.direccion,
+      comuna: formPedido.value.comuna,
+      cantidadBidones: formPedido.value.cantidadBidones,
+      tipoProducto: formPedido.value.tipoProducto,
+      medioPago: formPedido.value.medioPago
+    });
+    mostrarModalPedido.value = false;
   });
-  mostrarModalPedido.value = false;
 }
 
 function simularWebpay(p: Pedido) {
-  appStore.simularPagoWebpay(p.id);
+  void ejecutar(() => appStore.simularPagoWebpay(p.id));
 }
 
 function abrirModalTransferencia(p: Pedido) {
@@ -951,22 +1088,42 @@ function abrirModalTransferencia(p: Pedido) {
 }
 
 function confirmarTransferencia() {
-  if (modalTransferenciaPedido.value) {
-    appStore.validarTransferenciaManual(modalTransferenciaPedido.value.id, comprobanteNombre.value);
+  const pedido = modalTransferenciaPedido.value;
+  if (!pedido) return;
+  void ejecutar(async () => {
+    await appStore.validarTransferenciaManual(pedido.id, comprobanteNombre.value);
     modalTransferenciaPedido.value = null;
-  }
+  });
+}
+
+// Pedido de un cliente con envases no retornados: el administrativo decide si se retiran en esta entrega
+function autorizarPedido(p: Pedido) {
+  const motivo = prompt(`Coordinación por WhatsApp con ${p.clienteNombre} (motivo de la autorización):`);
+  if (!motivo?.trim()) return;
+  const conRetiro = confirm('¿El chofer retirará los envases pendientes en esta entrega?\n\nAceptar = con retiro • Cancelar = sin retiro');
+  void ejecutar(() => appStore.autorizarPedido(p.id, conRetiro ? 'CON_RETORNO' : 'SIN_RETORNO', motivo.trim()));
 }
 
 function asignarDespacho(p: Pedido) {
-  try {
-    appStore.asignarPedidoADespacho(p.id);
-  } catch (err: any) {
-    alert(err.message);
+  void ejecutar(() => appStore.asignarPedidoADespacho(p.id));
+}
+
+function abrirTurno() {
+  void ejecutar(() => appStore.abrirTurno());
+}
+
+function usarVehiculo(vehiculoId: string) {
+  void ejecutar(() => appStore.asignarVehiculoTurno(vehiculoId));
+}
+
+function iniciarRuta() {
+  if (confirm(`¿Cargar ${turno.value.botellonesCargados} botellones y salir a ruta?`)) {
+    void ejecutar(() => appStore.iniciarRuta());
   }
 }
 
 function confirmarEntregaChofer(p: Pedido) {
-  appStore.confirmarEntregaChofer(p.id);
+  void ejecutar(() => appStore.confirmarEntregaChofer(p));
 }
 
 function abrirModalIncidencia(p: Pedido) {
@@ -974,23 +1131,36 @@ function abrirModalIncidencia(p: Pedido) {
 }
 
 function ejecutarIncidencia(tipo: 'pendiente' | 'ausente' | 'roto') {
-  if (!modalIncidenciaPedido.value) return;
+  const pedido = modalIncidenciaPedido.value;
+  if (!pedido) return;
   const mapDetalle: Record<string, string> = {
     pendiente: 'Cliente no entregó envases vacíos a conserjería.',
     ausente: 'No respondió llamadas ni timbre.',
     roto: 'Envase fisurado durante traslado en furgón.'
   };
-  appStore.reportarIncidenciaChofer(modalIncidenciaPedido.value.id, tipo, mapDetalle[tipo]);
-  modalIncidenciaPedido.value = null;
+  void ejecutar(async () => {
+    await appStore.reportarIncidenciaChofer(pedido, tipo, mapDetalle[tipo]);
+    modalIncidenciaPedido.value = null;
+  });
 }
 
 function liquidarFurgon() {
-  appStore.liquidarRetornoFurgonCentral();
+  if (confirm('¿Cerrar el turno y descargar el furgón en bodega central?')) {
+    void ejecutar(() => appStore.liquidarRetornoFurgonCentral());
+  }
+}
+
+function sincronizar() {
+  void ejecutar(() => appStore.sincronizarInventario());
+}
+
+function recargarEnPlanta() {
+  void ejecutar(() => appStore.sanitizarYRecargar(10));
 }
 
 function autorizarBajaRoto() {
   if (confirm('¿Confirmar inspección física y autorizar baja definitiva de 1 botellón inservible?')) {
-    appStore.autorizarBajaRotoAdmin(1);
+    void ejecutar(() => appStore.autorizarBajaRotoAdmin(1));
   }
 }
 
@@ -999,11 +1169,37 @@ function verDetallePedido(p: Pedido) {
 }
 
 function toggleOffline() {
-  appStore.state.modoOffline = !appStore.state.modoOffline;
+  void ejecutar(() => appStore.cambiarModoOffline(!appStore.state.modoOffline));
 }
 </script>
 
 <style scoped>
+.login-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.login-card {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 32px;
+}
+
+.login-card .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.login-error {
+  color: var(--danger, #b42318);
+  font-size: 0.875rem;
+}
+
 .app-layout {
   min-height: 100vh;
   display: flex;
