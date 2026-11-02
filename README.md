@@ -33,7 +33,8 @@ Sistema para coordinar la venta y el reparto de bidones de agua purificada de 20
   * *Despacho y furgones:* Control de capacidad por vehículo ($N_{\max}$) y asignación de hojas de ruta.
   * *Terminal de chofer:* Interfaz móvil para reparto con paradas en orden geográfico, check de entrega en 1 toque y excepciones de botellones.
   * *Bodegas e inventario:* Cuadratura continua bajo la FSM de 6 estados, bodega de rotos y rotación bancaria a los **45 comprobantes**.
-* **Backend y base de datos (planificado):** Supabase (PostgreSQL, Row Level Security, Edge Functions).
+* **Backend local (Sprint 1):** API Node en `backend/` sobre PostgreSQL local (PGlite), con sesiones, permisos por perfil y el SQL de Agustín. La interfaz conectada está en `SprintAppView.vue`. Detalle en [docs/backend-local.md](./docs/backend-local.md).
+* **Backend y base de datos (destino):** Supabase (PostgreSQL, Row Level Security, Edge Functions).
 * **Integraciones:**
   * *Pagos digitales:* Webpay Plus de Transbank (confirmación automática).
   * *Transferencias bancarias:* Carga manual con conmutación automática de cuentas al acumular **45 comprobantes procesados**.
@@ -45,7 +46,10 @@ Sistema para coordinar la venta y el reparto de bidones de agua purificada de 20
 
 ```text
 .
+├── backend/                                    # API Node: servidor, servicios por recurso y pruebas
+├── database/                                   # SQL original de Agustín y extensión del Sprint 1
 ├── docs/
+│   ├── backend-local.md                        # Ejecución, alcance y organización del backend
 │   └── ux/
 │       └── mapeo_experiencia_admin_chofer.md   # Service Blueprint, FSM de 6 estados y matriz de pantallas (#47)
 ├── frontend/                                   # Plataforma integrada en Vue 3 + Vite + TypeScript
@@ -74,26 +78,28 @@ Sistema para coordinar la venta y el reparto de bidones de agua purificada de 20
 ## 5. Instrucciones de instalación y ejecución local
 
 ### Requisitos previos
-* Node.js v20 o superior (recomendado Node 22+)
+* Node.js 22 o superior (el backend lo exige)
 * npm v10 o superior
 
-### Ejecutar el frontend
+### Ejecutar backend y frontend
 Desde la raíz del repositorio (la carpeta que contiene este README):
 
 ```bash
-# 1. Instalar las dependencias del frontend según el archivo de bloqueo
+# 1. Instalar dependencias del backend y del frontend según los archivos de bloqueo
+npm ci
 npm ci --prefix frontend
 
-# 2. Iniciar el servidor de desarrollo Vite
+# 2. Levantar la API (puerto 8787) y Vite con recarga inmediata (puerto 5173)
 npm run dev
 ```
 
-Para verificar TypeScript y generar la compilación de producción, ejecutar `npm run build` desde la raíz. Los comandos `npm run dev` y `npm run build` también siguen disponibles dentro de `frontend/`.
+La plataforma quedará disponible en `http://127.0.0.1:5173/`. La primera ejecución crea la base local y deja las contraseñas temporales de los usuarios `ignacio`, `administrativo` y `chofer` en `.local/credenciales.txt` (excluido de Git).
+
+* `npm run dev:frontend`: solo el frontend con Vite, sin API.
+* `npm run check`: pruebas del backend y compilación TypeScript/Vite.
+* `npm run build`: compilación de producción del frontend.
 
 Si aparece `Missing script: "dev"`, comprobar que la terminal esté en la raíz del repositorio o dentro de `frontend/`.
-
-La plataforma quedará disponible en `http://localhost:5173/`:
-Al ingresar, se accede de inmediato a la aplicación operativa completa sin intermediarios ni menús de tareas.
 
 ### Sincronización con Azure Boards (opcional)
 ```bash

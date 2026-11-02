@@ -1,11 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import MainAppView from '../views/MainAppView.vue';
+import SprintAppView from '../views/SprintAppView.vue';
 
 const routes = [
   {
     path: '/',
     name: 'MainApp',
-    component: MainAppView,
+    component: SprintAppView,
     meta: { title: 'Sistema de gestión y distribución de agua purificada' }
   },
   {

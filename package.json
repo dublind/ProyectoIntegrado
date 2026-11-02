@@ -1,8 +1,26 @@
 {
-  "name": "proyecto-integrado",
+  "name": "proyecto-integrado-sprint-1",
   "private": true,
+  "type": "module",
+  "version": "0.1.0",
   "scripts": {
-    "dev": "npm --prefix ./frontend run dev --",
-    "build": "npm --prefix ./frontend run build"
+    "dev": "node scripts/dev.mjs",
+    "dev:frontend": "npm --prefix ./frontend run dev --",
+    "start": "node backend/server.mjs",
+    "test": "node --test backend/tests/*.test.mjs",
+    "build": "npm --prefix frontend run build",
+    "check": "npm test && npm run build",
+    "backup": "node scripts/backup.mjs",
+    "format:backend": "prettier --write \"backend/**/*.mjs\"",
+    "format:backend:check": "prettier --check \"backend/**/*.mjs\""
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.9"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "prettier": "3.6.2"
   }
 }

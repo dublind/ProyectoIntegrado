@@ -1,0 +1,30 @@
+trigger:
+  branches:
+    include:
+      - main
+      - codex/*
+pool:
+  vmImage: ubuntu-latest
+steps:
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '24.x'
+    displayName: Node para entorno de prueba
+  - script: |
+      npm ci --no-audit --no-fund
+      npm --prefix frontend ci --no-audit --no-fund
+      npm test
+      npm run build
+    displayName: Validar SQL, permisos, reglas y frontend
+  - bash: |
+      node backend/server.mjs > smoke.log 2>&1 &
+      API_PID=$!
+      trap 'kill "$API_PID" || true' EXIT
+      curl --retry 15 --retry-delay 2 --retry-connrefused --fail http://127.0.0.1:8787/api/health
+      curl --fail http://127.0.0.1:8787/
+    displayName: Desplegar y probar instancia efímera de desarrollo
+  - task: PublishPipelineArtifact@1
+    inputs:
+      targetPath: frontend/dist
+      artifact: frontend-prueba
+    displayName: Publicar build de prueba
