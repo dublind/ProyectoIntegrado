@@ -54,7 +54,7 @@ export async function notifyPaymentApproved(db, orderId, paymentId) {
     mensaje:
       `Hola ${o.nombre}, recibimos tu pago de ${money(o.cantidad * o.precio_unitario)} ` +
       `por el pedido N° ${o.id_pedido} (${o.cantidad} bidón(es) de 20 litros). ` +
-      'Te lo llevamos mañana; te avisaremos cuando salga el reparto.',
+      'Tu pedido será entregado mañana; te avisaremos cuando salga el reparto.',
   });
   await notify(db, {
     evento: `pago-${paymentId}-interno`,
