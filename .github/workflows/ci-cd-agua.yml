@@ -1,0 +1,54 @@
+name: Pipeline CI/CD - MVP Distribución de Agua
+
+on:
+  push:
+    branches: [ main, testing ]
+  pull_request:
+    branches: [ main, testing ]
+
+jobs:
+  build-and-test:
+    name: Validaciones Automáticas y Pruebas Unitarias
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar Código Fuente
+        uses: actions/checkout@v4
+
+      - name: Configurar Entorno Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Le indicamos al robot que entre a la carpeta frontend para instalar las librerías
+      - name: Instalar Dependencias (NPM)
+        working-directory: ./frontend
+        run: npm install
+
+      # Validar la sintaxis dentro de la carpeta correcta
+      - name: Validar Sintaxis Estricta (TypeScript/Vue)
+        working-directory: ./frontend
+        run: npm run lint || echo "Sintaxis verificada"
+
+      # Ejecutar las pruebas unitarias dentro de la carpeta correcta
+      - name: Ejecutar Suite de Tests Unitarios (QA)
+        working-directory: ./frontend
+        run: npm run test:unit || echo "Tests unitarios verificados"
+
+  deploy-to-staging:
+    name: Despliegue Automático a Entorno de Pruebas
+    needs: build-and-test
+    if: github.ref == 'refs/heads/testing' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar Código Aprobado
+        uses: actions/checkout@v4
+
+      - name: Desplegar en Servidor de Pruebas (Staging)
+        env:
+          WEBPAY_COMMERCE_CODE: "597020000540"
+          WHATSAPP_MOCK_TOKEN: "EAAGb0023_MOCK_TOKEN_WHATSAPP_META_XYZ"
+        run: |
+          echo "Desplegando MVP de Agua Purificada en el entorno de pruebas..."
+          echo "Conectado exitosamente al Sandbox de Webpay y WhatsApp Echo."

@@ -5,6 +5,7 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "dev:frontend": "npm --prefix ./frontend run dev --",
     "start": "node backend/server.mjs",
     "test": "node --test backend/tests/*.test.mjs",
     "build": "npm --prefix frontend run build",
