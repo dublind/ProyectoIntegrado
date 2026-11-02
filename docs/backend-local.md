@@ -72,8 +72,8 @@ Webpay y WhatsApp reales necesitan configuración oficial; la ficha Google Busin
 
 - `database/source/agustin-original.sql` y `agustin-pbi52.txt`: código y evidencia de Agustín, sin reescribir el original.
 - `database/extension-sprint1.sql`: adaptación aditiva a las respuestas actuales.
-- `frontend/src/views/MainAppView.vue`: interfaz de Fabián, ruta principal `/` (datos de ejemplo en memoria, aún no conectada a la API).
-- `frontend/src/views/SprintAppView.vue`: aplicación conectada al servidor local, ruta `/sistema`.
+- `frontend/src/views/MainAppView.vue`: interfaz de Fabián, ruta principal `/`, conectada a la API mediante `frontend/src/store/useAppStore.ts`.
+- `frontend/src/views/SprintAppView.vue`: vista técnica anterior conectada al servidor local, ruta `/sistema`.
 - `docs/azure/`: criterios y tablero leídos desde Azure.
 
 **No ejecutar el SQL original de demostración sobre datos reales:** contiene DROP y escenarios de prueba. El programa lo ejecuta únicamente al inicializar una base local nueva.
