@@ -50,6 +50,10 @@ export interface Pedido {
     fecha: string;
     resuelto: boolean;
   };
+  // Datos del backend: parada del turno activo, saldo pagado y autorización por no retornados
+  paradaId?: number;
+  pagado?: number;
+  autorizacion?: 'LIBRE' | 'PENDIENTE' | 'CON_RETORNO' | 'SIN_RETORNO';
 }
 
 export interface Vehiculo {
@@ -64,13 +68,13 @@ export interface Vehiculo {
 export interface TurnoDespacho {
   id: string;
   fecha: string;
-  turno: 'Mañana' | 'Tarde';
+  turno: string;
   vehiculoId: string;
   choferNombre: string;
   pedidosIds: string[];
   capacidadMax: number;
   botellonesCargados: number;
-  estado: 'preparacion' | 'en_ruta' | 'finalizado';
+  estado: 'preparacion' | 'en_ruta' | 'finalizado' | 'sin_turno';
 }
 
 export interface CuentaBancaria {
