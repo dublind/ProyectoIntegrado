@@ -4,6 +4,7 @@ import { one } from '../shared/database.mjs';
 import { audit, changeState } from '../shared/audit.mjs';
 import { getOrder } from './orders.mjs';
 import { move } from './inventory.mjs';
+import { notifyDelivery, notifyPendingReturn } from './notifications.mjs';
 
 export async function handleStops(db, user, method, id, action, body) {
   permit(user, 'chofer');
@@ -35,6 +36,7 @@ export async function handleStops(db, user, method, id, action, body) {
       'Coordinar regreso durante el día o mañana',
     );
     await audit(db, user, 'Cliente ausente', id);
+    await notifyDelivery(db, id, currentOrder.id_pedido, { absent: true });
     return { ok: true };
   }
 
@@ -91,8 +93,9 @@ export async function handleStops(db, user, method, id, action, body) {
   fail(empties > delivered, 'Marca los retiros anteriores individualmente antes de confirmar');
 
   if (delivered > empties) {
-    await db.query(
-      'INSERT INTO retorno_pendiente(cliente_id,pedido_id,cantidad,evento,responsable) VALUES ($1,$2,$3,$4,$5)',
+    const pendingReturn = await one(
+      db,
+      'INSERT INTO retorno_pendiente(cliente_id,pedido_id,cantidad,evento,responsable) VALUES ($1,$2,$3,$4,$5) RETURNING *',
       [
         currentOrder.id_cliente,
         currentOrder.id_pedido,
@@ -101,6 +104,7 @@ export async function handleStops(db, user, method, id, action, body) {
         user.username,
       ],
     );
+    await notifyPendingReturn(db, pendingReturn);
   }
 
   if (broken) {
@@ -142,5 +146,8 @@ export async function handleStops(db, user, method, id, action, body) {
       : 'Parcial aceptada; saldo pagado en próximo turno',
   );
   await audit(db, user, 'Registrar entrega', id, { delivered, broken, empties });
+  if (delivered) {
+    await notifyDelivery(db, id, currentOrder.id_pedido, { delivered });
+  }
   return { ok: true };
 }

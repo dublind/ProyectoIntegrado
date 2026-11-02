@@ -3,6 +3,7 @@ import { integer, text } from '../shared/validation.mjs';
 import { one, rows } from '../shared/database.mjs';
 import { audit, changeState } from '../shared/audit.mjs';
 import { getBalance } from './inventory.mjs';
+import { convertRequest } from './whatsapp.mjs';
 
 const ORDER_DETAILS_QUERY = `
   SELECT p.*, e.nombre_estado, c.nombre, c.telefono,
@@ -138,6 +139,14 @@ async function createOrder(db, user, body) {
     'Pedido ingresado por administración desde WhatsApp',
   );
   await audit(db, user, 'Crear pedido', currentOrder.id_pedido);
+  if (body.solicitud_id) {
+    await convertRequest(
+      db,
+      integer(body.solicitud_id, 'Solicitud', 1, 2147483647),
+      currentOrder.id_pedido,
+      address.id_cliente,
+    );
+  }
   return currentOrder;
 }
 

@@ -9,6 +9,8 @@ import { handleTurns } from './services/turns.mjs';
 import { handleStops } from './services/stops.mjs';
 import { handleReturns } from './services/returns.mjs';
 import { handleInventory } from './services/inventory.mjs';
+import { handleNotifications } from './services/notifications.mjs';
+import { handleRequests } from './services/whatsapp.mjs';
 
 // Mantener los exports que utiliza el servidor y cualquier consumidor local.
 export { ApiError, fail, permit } from './shared/errors.mjs';
@@ -25,9 +27,11 @@ const handlers = {
   stops: handleStops,
   returns: handleReturns,
   inventory: handleInventory,
+  notifications: handleNotifications,
+  requests: handleRequests,
 };
 
-export async function execute(db, user, method, url, body) {
+export async function execute(db, user, method, url, body, context = {}) {
   const parts = url.split('/').filter(Boolean);
   const resource = parts[1];
   const id = Number(parts[2]);
@@ -42,5 +46,5 @@ export async function execute(db, user, method, url, body) {
   if (!handler) {
     throw new ApiError(404, 'Ruta no encontrada');
   }
-  return handler(db, user, method, id, action, body);
+  return handler(db, user, method, id, action, body, context);
 }
