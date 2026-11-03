@@ -21,25 +21,27 @@ Sistema para coordinar la venta y el reparto de bidones de agua purificada de 20
 | Work Item ID | Título del ítem | Criterio de aceptación oficial | Entregable en el repositorio |
 | :---: | :--- | :--- | :--- |
 | **[#47](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_workitems/edit/47)** | **Mapear experiencia de administrativo y chofer** | *Flujos y estados de pantalla cubren pedido, carga, entrega e incidencia.* | [`docs/ux/mapeo_experiencia_admin_chofer.md`](./docs/ux/mapeo_experiencia_admin_chofer.md) |
-| **[#48](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_workitems/edit/48)** | **Diseñar interfaz de administración de pedidos** | *Prototipo permite buscar, crear y revisar pedidos con estado y pago.* | [`frontend/src/views/MainAppView.vue`](./frontend/src/views/MainAppView.vue) (Módulos *Pedidos* y *Despacho*) |
-| **[#49](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_workitems/edit/49)** | **Diseñar interfaz móvil de reparto** | *Prototipo permite ver paradas, confirmar entrega y reportar envases.* | [`frontend/src/views/MainAppView.vue`](./frontend/src/views/MainAppView.vue) (Módulo *Terminal de chofer*) |
+| **[#48](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_workitems/edit/48)** | **Diseñar interfaz de administración de pedidos** | *Prototipo permite buscar, crear y revisar pedidos con estado y pago.* | [`frontend/src/views/admin/`](./frontend/src/views/admin/) (vistas *Pedidos* y *Despacho*) |
+| **[#49](https://dev.azure.com/ignaciosalinas/Proyecto%20Integrado/_workitems/edit/49)** | **Diseñar interfaz móvil de reparto** | *Prototipo permite ver paradas, confirmar entrega y reportar envases.* | [`frontend/src/views/chofer/ChoferView.vue`](./frontend/src/views/chofer/ChoferView.vue) (app del chofer) |
 
 ---
 
 ## 3. Stack tecnológico
 
-* **Frontend:** Vue 3 con Vite y TypeScript en una **solución única e integrada** (`MainAppView.vue`), que articula en tiempo real:
-  * *Pedidos y ventas:* Búsqueda, prellenado automático, detección de envases adeudados y cobros.
-  * *Despacho y furgones:* Control de capacidad por vehículo ($N_{\max}$) y asignación de hojas de ruta.
-  * *Terminal de chofer:* Interfaz móvil para reparto con paradas en orden geográfico, check de entrega en 1 toque y excepciones de botellones.
-  * *Bodegas e inventario:* Cuadratura continua bajo la FSM de 6 estados, bodega de rotos y rotación bancaria a los **45 comprobantes**.
-* **Backend local (Sprint 1):** API Node en `backend/` sobre PostgreSQL local (PGlite), con sesiones, permisos por perfil y el SQL de Agustín. La interfaz de Fabián (`MainAppView.vue`, ruta `/`) trabaja sobre esta API: inicio de sesión, módulos por perfil, pedidos, pagos, turnos, entregas (con cola sin conexión) e inventario. La vista técnica anterior sigue en `/sistema` (`SprintAppView.vue`). Detalle en [docs/backend-local.md](./docs/backend-local.md).
-* **Avisos y WhatsApp (Sprint 2):** solicitudes entrantes, avisos a clientes con reintentos y alertas fechadas de retiro pendiente. Ver [docs/whatsapp-avisos.md](./docs/whatsapp-avisos.md).
-* **Backend y base de datos (destino):** Supabase (PostgreSQL, Row Level Security, Edge Functions).
+* **Frontend:** Vue 3 con Vite, TypeScript y Vue Router. Dos experiencias que comparten el mismo estado en tiempo real:
+  * **Panel administrativo** (`/`): navegación lateral (barra inferior en móvil).
+    * *Indicadores:* pedidos del día, entregas, pendientes y stock, solo con datos registrados.
+    * *Pedidos y ventas:* búsqueda, prellenado automático, validación junto a cada campo, alertas de envases y cobros.
+    * *Despacho y furgones:* capacidad por vehículo ($N_{\max}$), cola de asignación, ausencias a reprogramar y saldos de parciales.
+    * *Bodegas e inventario:* cuadratura continua, envases pendientes con antigüedad (30/60 días), bodega de rotos y rotación bancaria a los **45 comprobantes**.
+    * *Seguimiento:* mapa con furgones en ruta (simulación) sobre Google Maps u OpenStreetMap.
+  * **App del chofer** (`/chofer`): paradas en orden geográfico, entrega en 1 toque, retiros pendientes, ausencias y entregas parciales con aceptación del cliente.
+* **Backend y base de datos (planificado):** Supabase (PostgreSQL, Row Level Security, Edge Functions).
 * **Integraciones:**
   * *Pagos digitales:* Webpay Plus de Transbank (confirmación automática).
   * *Transferencias bancarias:* Carga manual con conmutación automática de cuentas al acumular **45 comprobantes procesados**.
   * *Notificaciones:* WhatsApp Business Platform / avisos operativos.
+  * *Mapas:* Google Maps Platform (Maps JavaScript API), con OpenStreetMap como respaldo si no hay API key.
 
 ---
 
@@ -47,22 +49,24 @@ Sistema para coordinar la venta y el reparto de bidones de agua purificada de 20
 
 ```text
 .
-├── backend/                                    # API Node: servidor, servicios por recurso y pruebas
-├── database/                                   # SQL original de Agustín y extensión del Sprint 1
 ├── docs/
-│   ├── backend-local.md                        # Ejecución, alcance y organización del backend
 │   └── ux/
 │       └── mapeo_experiencia_admin_chofer.md   # Service Blueprint, FSM de 6 estados y matriz de pantallas (#47)
 ├── frontend/                                   # Plataforma integrada en Vue 3 + Vite + TypeScript
 │   ├── src/
 │   │   ├── types/                              # Interfaces TypeScript del dominio
-│   │   ├── store/                              # Estado de la interfaz cargado desde la API (/api/state) y sus acciones
+│   │   ├── store/                              # Estado reactivo global y reglas de negocio del MVP
 │   │   ├── router/                             # Rutas de la aplicación
+│   │   ├── layouts/AdminLayout.vue             # Estructura del panel (navegación y barra superior)
 │   │   ├── views/
-│   │   │   └── MainAppView.vue                 # Interfaz única articulada (Pedidos, Despacho, Chofer, Bodegas)
+│   │   │   ├── admin/                          # Indicadores, Pedidos, Despacho, Inventario, Seguimiento
+│   │   │   └── chofer/ChoferView.vue           # App móvil del chofer
+│   │   ├── components/                         # Formulario de pedido y avisos
+│   │   ├── utils/                              # Validaciones, formato, geografía y adaptador de mapa
 │   │   ├── style.css                           # Sistema de diseño y variables CSS
 │   │   ├── App.vue
 │   │   └── main.ts
+│   ├── .env.example                            # Plantilla de variables (copiar a .env.local)
 │   ├── package.json
 │   └── vite.config.ts
 ├── scripts/
@@ -79,31 +83,41 @@ Sistema para coordinar la venta y el reparto de bidones de agua purificada de 20
 ## 5. Instrucciones de instalación y ejecución local
 
 ### Requisitos previos
-* Node.js 22 o superior (el backend lo exige)
+* Node.js v20 o superior (recomendado Node 22+)
 * npm v10 o superior
 
-### Ejecutar backend y frontend
-Desde la raíz del repositorio (la carpeta que contiene este README):
-
+### Ejecutar el frontend
 ```bash
-# 1. Instalar dependencias del backend y del frontend según los archivos de bloqueo
-npm ci
-npm ci --prefix frontend
+# 1. Ingresar a la carpeta frontend
+cd frontend
 
-# 2. Levantar la API (puerto 8787) y Vite con recarga inmediata (puerto 5173)
+# 2. Instalar dependencias
+npm install
+
+# 3. Iniciar el servidor de desarrollo Vite
 npm run dev
 ```
 
-La plataforma quedará disponible en `http://127.0.0.1:5173/`. La primera ejecución crea la base local y deja las contraseñas temporales de los usuarios `ignacio`, `administrativo` y `chofer` en `.local/credenciales.txt` (excluido de Git).
+La plataforma quedará disponible en `http://localhost:5173/` (panel) y `http://localhost:5173/chofer` (app del chofer).
 
-* `npm run dev:frontend`: solo el frontend con Vite, sin API.
-* `npm run check`: pruebas del backend y compilación TypeScript/Vite.
-* `npm run build`: compilación de producción del frontend.
+### Configurar Google Maps (opcional)
 
-Si aparece `Missing script: "dev"`, comprobar que la terminal esté en la raíz del repositorio o dentro de `frontend/`.
+Sin configuración, el mapa de seguimiento funciona con OpenStreetMap. Para usar Google Maps:
 
-### Flujo de ramas
-El trabajo se integra con Git Flow: `main` es la versión estable, `develop` la del sprint en curso, y cada tarea va en una rama `feature/` que nace de `develop`. Ver [docs/git-flow.md](./docs/git-flow.md).
+1. En [Google Cloud Console](https://console.cloud.google.com/google/maps-apis), habilitar **Maps JavaScript API** y crear una API key.
+2. Restringir la key (es obligatorio, porque una key de frontend queda visible en el navegador):
+   * **Restricción de aplicación → Sitios web:** `http://localhost:5173/*` y el dominio de producción.
+   * **Restricción de API:** solo *Maps JavaScript API*.
+   * Configurar cuotas diarias y una alerta de presupuesto.
+3. Copiar la plantilla y pegar la key:
+   ```bash
+   cd frontend
+   cp .env.example .env.local
+   # editar .env.local → VITE_GOOGLE_MAPS_API_KEY=...
+   ```
+4. Reiniciar `npm run dev`. El mapa indicará *Google Maps* en la esquina superior.
+
+`.env.local` está ignorado por git: **nunca commitear la key**. Compártanla con el equipo por un canal privado y, al desplegar, configúrenla como variable de entorno del hosting o como secret de GitHub Actions. Las llamadas de servidor (Geocoding, Directions) deben ir en una Supabase Edge Function con una key distinta guardada como secret de Supabase.
 
 ### Sincronización con Azure Boards (opcional)
 ```bash

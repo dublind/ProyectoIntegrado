@@ -1,27 +1,55 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import MainAppView from '../views/MainAppView.vue';
-import SprintAppView from '../views/SprintAppView.vue';
+import AdminLayout from '../layouts/AdminLayout.vue';
 
 const routes = [
   {
+    // Panel web del administrativo y del dueño
     path: '/',
-    name: 'MainApp',
-    component: MainAppView,
-    meta: { title: 'Sistema de gestión y distribución de agua purificada' }
+    component: AdminLayout,
+    children: [
+      { path: '', redirect: '/indicadores' },
+      {
+        path: 'indicadores',
+        name: 'Indicadores',
+        component: () => import('../views/admin/IndicadoresView.vue'),
+        meta: { title: 'Indicadores operativos', descripcion: 'Resumen del día para el dueño' }
+      },
+      {
+        path: 'pedidos',
+        name: 'Pedidos',
+        component: () => import('../views/admin/PedidosView.vue'),
+        meta: { title: 'Pedidos y ventas', descripcion: 'Recepción, cobro y validación de pagos' }
+      },
+      {
+        path: 'despacho',
+        name: 'Despacho',
+        component: () => import('../views/admin/DespachoView.vue'),
+        meta: { title: 'Despacho y furgones', descripcion: 'Carga del turno, ausencias y saldos' }
+      },
+      {
+        path: 'inventario',
+        name: 'Inventario',
+        component: () => import('../views/admin/InventarioView.vue'),
+        meta: { title: 'Bodegas e inventario', descripcion: 'Cuadratura, envases pendientes y cuentas' }
+      },
+      {
+        path: 'seguimiento',
+        name: 'Seguimiento',
+        component: () => import('../views/admin/SeguimientoView.vue'),
+        meta: { title: 'Seguimiento de flota', descripcion: 'Mapa de furgones en ruta (simulación)' }
+      }
+    ]
   },
   {
-    path: '/sistema',
-    name: 'SprintApp',
-    component: SprintAppView,
-    meta: { title: 'Sistema conectado al backend local' }
+    // App móvil del chofer (PWA), separada del panel
+    path: '/chofer',
+    name: 'Chofer',
+    component: () => import('../views/chofer/ChoferView.vue'),
+    meta: { title: 'Ruta del chofer' }
   },
   {
     path: '/admin',
-    redirect: '/'
-  },
-  {
-    path: '/chofer',
-    redirect: '/'
+    redirect: '/indicadores'
   },
   {
     path: '/:pathMatch(.*)*',
@@ -34,11 +62,10 @@ const router = createRouter({
   routes
 });
 
-router.beforeEach((to, _from, next) => {
-  if (to.meta.title) {
-    document.title = `${to.meta.title}`;
-  }
-  next();
+router.afterEach((to) => {
+  document.title = to.meta.title
+    ? `${to.meta.title} · Aguas purificadas`
+    : 'Sistema de gestión y distribución de agua purificada';
 });
 
 export default router;

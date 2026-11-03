@@ -460,3 +460,156 @@ input:focus, select:focus, textarea:focus {
 .mb-4 { margin-bottom: 16px !important; }
 .mb-6 { margin-bottom: 24px !important; }
 .mb-8 { margin-bottom: 32px !important; }
+
+/* ==========================================================================
+   PIEZAS COMPARTIDAS ENTRE VISTAS DEL PANEL
+   ========================================================================== */
+
+.view-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.view-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.view-toolbar .toolbar-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.card-title {
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  font-weight: 800;
+  color: var(--zun-negro);
+  letter-spacing: -0.01em;
+}
+
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.card-sub {
+  font-size: 0.84rem;
+  color: var(--zun-gris);
+  margin-top: 2px;
+}
+
+.empty-box {
+  padding: 26px;
+  background: var(--zun-blanco-sutil);
+  border: 1px dashed var(--zun-border);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  color: var(--zun-gris);
+  font-size: 0.9rem;
+}
+
+.cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.comuna-pill {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--zun-gris-dark);
+  background: var(--zun-blanco-sutil);
+  border: 1px solid var(--zun-border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  display: inline-block;
+  width: fit-content;
+}
+
+.list-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 18px;
+  background: var(--zun-blanco-sutil);
+  border: 1px solid var(--zun-border);
+  border-radius: var(--radius-sm);
+  flex-wrap: wrap;
+}
+
+.list-row .row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.list-row .row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Formularios con error junto al campo (Bug 93) */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.form-group label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--zun-gris-dark);
+}
+
+.form-row {
+  display: flex;
+  gap: 16px;
+}
+
+.form-group.has-error input,
+.form-group.has-error select {
+  border-color: var(--zun-rojo);
+  background: var(--zun-rojo-light);
+}
+
+.field-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #b91c1c;
+}
+
+.field-hint {
+  font-size: 0.76rem;
+  color: var(--zun-gris);
+}
+
+@media (max-width: 640px) {
+  .form-row {
+    flex-direction: column;
+  }
+}
