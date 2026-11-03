@@ -1,7 +1,17 @@
 import { reactive, computed } from 'vue';
-import type { Cliente, Pedido, Vehiculo, TurnoDespacho, CuentaBancaria, InventarioBodega, MedioPago } from '../types';
+import type { Cliente, Pedido, Vehiculo, TurnoDespacho, CuentaBancaria, InventarioBodega, MedioPago, RegistroEnvase } from '../types';
+import { geocodificarSimulado, ordenarPorCercania } from '../utils/geo';
+import { ahoraISO, diasDesde, hoyISO } from '../utils/formato';
+import { normalizarTelefono } from '../utils/validacion';
 
-const STORAGE_KEY = 'agua_purificada_mvp_store';
+const STORAGE_KEY = 'agua_purificada_mvp_store_v2';
+
+// Fechas de la demo relativas a hoy, para que la antigüedad de los envases (30/60 días) sea visible
+function haceDias(dias: number, hora = '10:00') {
+  const d = new Date();
+  d.setDate(d.getDate() - dias);
+  return `${hoyISO(d)} ${hora}`;
+}
 
 const clientesIniciales: Cliente[] = [
   {
@@ -10,11 +20,12 @@ const clientesIniciales: Cliente[] = [
     telefono: '+56 9 8765 4321',
     direccion: 'Av. Providencia 1245, Depto 602',
     comuna: 'Providencia',
+    coords: { lat: -33.4296, lng: -70.6168 },
     deudaEnvases: 0,
     ultimoPedido: {
       cantidadBidones: 2,
       tipoProducto: 'Agua Purificada 20L Sellada',
-      fecha: '2026-10-02'
+      fecha: haceDias(1).slice(0, 10)
     }
   },
   {
@@ -23,11 +34,12 @@ const clientesIniciales: Cliente[] = [
     telefono: '+56 9 7654 3210',
     direccion: 'Ahumada 341, Of. 804',
     comuna: 'Santiago Centro',
+    coords: { lat: -33.4381, lng: -70.6506 },
     deudaEnvases: 1, // Tiene un botellón pendiente
     ultimoPedido: {
       cantidadBidones: 4,
       tipoProducto: 'Agua Purificada 20L Sellada',
-      fecha: '2026-09-28'
+      fecha: haceDias(1).slice(0, 10)
     }
   },
   {
@@ -36,11 +48,12 @@ const clientesIniciales: Cliente[] = [
     telefono: '+56 9 9123 4567',
     direccion: 'Los Leones 2341, Casa B',
     comuna: 'Providencia',
+    coords: { lat: -33.4362, lng: -70.6012 },
     deudaEnvases: 0,
     ultimoPedido: {
       cantidadBidones: 1,
       tipoProducto: 'Agua Purificada 20L Sellada',
-      fecha: '2026-10-04'
+      fecha: haceDias(1).slice(0, 10)
     }
   },
   {
@@ -49,11 +62,12 @@ const clientesIniciales: Cliente[] = [
     telefono: '+56 9 6543 2109',
     direccion: 'Av. Irarrázaval 3820',
     comuna: 'Ñuñoa',
+    coords: { lat: -33.4547, lng: -70.5878 },
     deudaEnvases: 2, // Deuda de 2 envases
     ultimoPedido: {
       cantidadBidones: 3,
       tipoProducto: 'Agua Purificada 20L Sellada',
-      fecha: '2026-09-15'
+      fecha: haceDias(0).slice(0, 10)
     }
   }
 ];
@@ -122,13 +136,14 @@ const pedidosIniciales: Pedido[] = [
     telefono: '+56 9 8765 4321',
     direccion: 'Av. Providencia 1245, Depto 602',
     comuna: 'Providencia',
+    coords: { lat: -33.4296, lng: -70.6168 },
     cantidadBidones: 2,
     tipoProducto: 'Agua Purificada 20L Sellada',
     precioUnitario: 3500,
     total: 7000,
     estado: 'en_despacho',
     medioPago: 'webpay',
-    fechaCreacion: '2026-10-06 09:30',
+    fechaCreacion: haceDias(1, '09:30'),
     promesaEntrega: 'Mañana (Turno Mañana)',
     linkWebpay: 'https://webpay.transbank.cl/p/tx-9921',
     tieneAlertaDeuda: false,
@@ -142,13 +157,14 @@ const pedidosIniciales: Pedido[] = [
     telefono: '+56 9 7654 3210',
     direccion: 'Ahumada 341, Of. 804',
     comuna: 'Santiago Centro',
+    coords: { lat: -33.4381, lng: -70.6506 },
     cantidadBidones: 4,
     tipoProducto: 'Agua Purificada 20L Sellada',
     precioUnitario: 3500,
     total: 14000,
     estado: 'en_despacho',
     medioPago: 'transferencia',
-    fechaCreacion: '2026-10-06 10:15',
+    fechaCreacion: haceDias(1, '10:15'),
     promesaEntrega: 'Mañana (Turno Mañana)',
     comprobanteTransferencia: 'comprobante_banco_102.pdf',
     cuentaBancariaId: 'cta-1',
@@ -163,13 +179,14 @@ const pedidosIniciales: Pedido[] = [
     telefono: '+56 9 9123 4567',
     direccion: 'Los Leones 2341, Casa B',
     comuna: 'Providencia',
+    coords: { lat: -33.4362, lng: -70.6012 },
     cantidadBidones: 1,
     tipoProducto: 'Agua Purificada 20L Sellada',
     precioUnitario: 3500,
     total: 3500,
     estado: 'en_despacho',
     medioPago: 'webpay',
-    fechaCreacion: '2026-10-06 11:40',
+    fechaCreacion: haceDias(1, '11:40'),
     promesaEntrega: 'Mañana (Turno Mañana)',
     linkWebpay: 'https://webpay.transbank.cl/p/tx-9925',
     tieneAlertaDeuda: false,
@@ -183,22 +200,54 @@ const pedidosIniciales: Pedido[] = [
     telefono: '+56 9 6543 2109',
     direccion: 'Av. Irarrázaval 3820',
     comuna: 'Ñuñoa',
+    coords: { lat: -33.4547, lng: -70.5878 },
     cantidadBidones: 3,
     tipoProducto: 'Agua Purificada 20L Sellada',
     precioUnitario: 3500,
     total: 10500,
     estado: 'pendiente_pago',
     medioPago: 'transferencia',
-    fechaCreacion: '2026-10-06 14:20',
+    fechaCreacion: haceDias(0, '08:20'),
     promesaEntrega: 'Mañana',
     tieneAlertaDeuda: true,
     deudaEnvasesPendiente: 2
   }
 ];
 
+// Envases no devueltos con fecha de origen (antigüedad: 12, 38 y 64 días)
+const registrosEnvasesIniciales: RegistroEnvase[] = [
+  {
+    id: 'env-1',
+    clienteId: 'cli-2',
+    clienteNombre: 'Estudio Jurídico & Asociados',
+    pedidoCodigo: 'PED-087',
+    cantidad: 1,
+    fechaOrigen: haceDias(12).slice(0, 10),
+    estado: 'pendiente'
+  },
+  {
+    id: 'env-2',
+    clienteId: 'cli-4',
+    clienteNombre: 'Panadería y Café El Molino',
+    pedidoCodigo: 'PED-064',
+    cantidad: 1,
+    fechaOrigen: haceDias(38).slice(0, 10),
+    estado: 'pendiente'
+  },
+  {
+    id: 'env-3',
+    clienteId: 'cli-4',
+    clienteNombre: 'Panadería y Café El Molino',
+    pedidoCodigo: 'PED-041',
+    cantidad: 1,
+    fechaOrigen: haceDias(64).slice(0, 10),
+    estado: 'pendiente'
+  }
+];
+
 const turnoActivoInicial: TurnoDespacho = {
   id: 'turno-1',
-  fecha: '2026-10-07',
+  fecha: hoyISO(),
   turno: 'Mañana',
   vehiculoId: 'veh-1',
   choferNombre: 'Pedro Chofer',
@@ -212,20 +261,25 @@ const inventarioInicial: InventarioBodega = {
   llenosCentral: 142,
   vaciosCentral: 85,
   enTransito: 7, // Sincronizado con botellonesCargados del furgón
-  pendientesDevolucion: 3, // Estudio Jurídico (1) + Panadería (2) = 3
+  pendientesDevolucion: 3, // Sincronizado con registros de envases pendientes
   rotosBodega: 4, // Botellones rotos esperando baja de Erick
   noRetornaron30d: 2,
   bajasDefinitivas60d: 5
 };
 
+function clonar<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v));
+}
+
 class AppStore {
   state = reactive({
-    clientes: [...clientesIniciales],
-    pedidos: [...pedidosIniciales],
-    vehiculos: [...vehiculosIniciales],
-    cuentasBancarias: [...cuentasBancariasIniciales],
-    turnoActivo: { ...turnoActivoInicial },
-    inventario: { ...inventarioInicial },
+    clientes: clonar(clientesIniciales),
+    pedidos: clonar(pedidosIniciales),
+    vehiculos: clonar(vehiculosIniciales),
+    cuentasBancarias: clonar(cuentasBancariasIniciales),
+    registrosEnvases: clonar(registrosEnvasesIniciales),
+    turnoActivo: clonar(turnoActivoInicial),
+    inventario: clonar(inventarioInicial),
     notificacionRotacion: null as string | null,
     modoOffline: false
   });
@@ -257,16 +311,33 @@ class AppStore {
 
   /**
    * Sincronización continua de inventario con todos los módulos:
-   * - En tránsito: exactamente igual a los botellones asignados en furgones de reparto.
-   * - Pendientes: exactamente igual a la suma de envases adeudados por todos los clientes.
+   * - En tránsito: exactamente igual a los envases a bordo del furgón de reparto.
+   * - Pendientes: suma de los registros de envases no devueltos que siguen activos.
+   * - Deuda de cada cliente y alerta de sus pedidos abiertos derivadas de esos registros.
    */
   sincronizarInventario() {
     // 1. En tránsito se sincroniza con los botellones cargados en ruta
     this.state.inventario.enTransito = this.state.turnoActivo.botellonesCargados;
 
-    // 2. Pendientes se sincroniza con la suma de deuda de todos los clientes
-    const deudaTotalClientes = this.state.clientes.reduce((acc, c) => acc + (c.deudaEnvases || 0), 0);
-    this.state.inventario.pendientesDevolucion = deudaTotalClientes;
+    // 2. Pendientes y no retornados (30 días) se derivan de los registros activos
+    const activos = this.state.registrosEnvases.filter(r => r.estado === 'pendiente');
+    this.state.inventario.pendientesDevolucion = activos.reduce((acc, r) => acc + r.cantidad, 0);
+    this.state.inventario.noRetornaron30d = activos
+      .filter(r => diasDesde(r.fechaOrigen) >= 30)
+      .reduce((acc, r) => acc + r.cantidad, 0);
+
+    // 3. Deuda en ficha de cliente y alerta en pedidos aún no cerrados
+    this.state.clientes.forEach(c => {
+      c.deudaEnvases = activos.filter(r => r.clienteId === c.id).reduce((acc, r) => acc + r.cantidad, 0);
+    });
+    this.state.pedidos.forEach(p => {
+      if (['pendiente_pago', 'pagado', 'en_despacho', 'ausente'].includes(p.estado)) {
+        const cli = this.state.clientes.find(c => c.id === p.clienteId);
+        p.deudaEnvasesPendiente = cli?.deudaEnvases ?? 0;
+        p.tieneAlertaDeuda = p.deudaEnvasesPendiente > 0;
+      }
+      if (!p.coords) p.coords = geocodificarSimulado(p.direccion, p.comuna);
+    });
 
     this.guardarEnLocalStorage();
   }
@@ -281,22 +352,43 @@ class AppStore {
     return inv.llenosCentral + inv.vaciosCentral + inv.enTransito + inv.pendientesDevolucion + inv.rotosBodega;
   });
 
+  // Paradas del turno en orden geográfico (vecino más cercano desde la bodega central)
   pedidosDespachoActivo = computed(() => {
     const ids = this.state.turnoActivo.pedidosIds;
-    return this.state.pedidos.filter(p => ids.includes(p.id));
+    return ordenarPorCercania(this.state.pedidos.filter(p => ids.includes(p.id)));
+  });
+
+  registrosPendientes = computed(() => {
+    return this.state.registrosEnvases
+      .filter(r => r.estado === 'pendiente')
+      .map(r => ({ ...r, dias: diasDesde(r.fechaOrigen) }))
+      .sort((a, b) => b.dias - a.dias);
   });
 
   alertasPendientesCount = computed(() => {
     return this.state.pedidos.filter(p => p.tieneAlertaDeuda || p.incidencia?.tipo === 'pendiente').length;
   });
 
+  retirosPendientesCliente(clienteId: string) {
+    return this.state.registrosEnvases
+      .filter(r => r.clienteId === clienteId && r.estado === 'pendiente')
+      .reduce((acc, r) => acc + r.cantidad, 0);
+  }
+
+  // Envases dados de baja por no retorno: mensaje persistente en ficha (solo administrativo)
+  bajasNoRetornoCliente(clienteId: string) {
+    return this.state.registrosEnvases
+      .filter(r => r.clienteId === clienteId && r.estado === 'baja')
+      .reduce((acc, r) => acc + r.cantidad, 0);
+  }
+
   // Acciones Administrativo (Tarea #48)
   buscarClientes(termino: string) {
     if (!termino.trim()) return [];
     const t = termino.toLowerCase();
-    return this.state.clientes.filter(c => 
-      c.nombre.toLowerCase().includes(t) || 
-      c.telefono.includes(t) || 
+    return this.state.clientes.filter(c =>
+      c.nombre.toLowerCase().includes(t) ||
+      c.telefono.includes(t) ||
       c.direccion.toLowerCase().includes(t)
     );
   }
@@ -315,17 +407,26 @@ class AppStore {
     tipoProducto: string;
     medioPago: MedioPago;
   }) {
-    let cliente = this.state.clientes.find(c => c.id === datos.clienteId || c.telefono === datos.telefono);
+    const telefono = normalizarTelefono(datos.telefono) ?? datos.telefono.trim();
+    let cliente = this.state.clientes.find(c => c.id === datos.clienteId || c.telefono === telefono);
     if (!cliente) {
       cliente = {
         id: `cli-${Date.now()}`,
-        nombre: datos.nombre,
-        telefono: datos.telefono,
-        direccion: datos.direccion,
-        comuna: datos.comuna,
+        nombre: datos.nombre.trim(),
+        telefono,
+        direccion: datos.direccion.trim(),
+        comuna: datos.comuna.trim(),
+        coords: geocodificarSimulado(datos.direccion, datos.comuna),
         deudaEnvases: 0
       };
       this.state.clientes.push(cliente);
+    } else {
+      // Actualiza la ficha si la secretaría corrigió la dirección
+      if (cliente.direccion !== datos.direccion.trim() || cliente.comuna !== datos.comuna.trim()) {
+        cliente.direccion = datos.direccion.trim();
+        cliente.comuna = datos.comuna.trim();
+        cliente.coords = geocodificarSimulado(cliente.direccion, cliente.comuna);
+      }
     }
 
     const precioUnitario = 3500;
@@ -341,13 +442,14 @@ class AppStore {
       telefono: cliente.telefono,
       direccion: cliente.direccion,
       comuna: cliente.comuna,
+      coords: cliente.coords ?? geocodificarSimulado(cliente.direccion, cliente.comuna),
       cantidadBidones: datos.cantidadBidones,
       tipoProducto: datos.tipoProducto,
       precioUnitario,
       total,
       estado: 'pendiente_pago',
       medioPago: datos.medioPago,
-      fechaCreacion: new Date().toLocaleString('es-CL'),
+      fechaCreacion: ahoraISO(),
       promesaEntrega: 'Mañana',
       tieneAlertaDeuda: cliente.deudaEnvases > 0,
       deudaEnvasesPendiente: cliente.deudaEnvases
@@ -358,12 +460,12 @@ class AppStore {
     }
 
     this.state.pedidos.unshift(nuevoPedido);
-    
+
     // Actualizar último pedido en cliente para futuro prellenado
     cliente.ultimoPedido = {
       cantidadBidones: datos.cantidadBidones,
       tipoProducto: datos.tipoProducto,
-      fecha: new Date().toISOString().split('T')[0]
+      fecha: hoyISO()
     };
 
     this.sincronizarInventario();
@@ -384,7 +486,7 @@ class AppStore {
 
     pedido.estado = 'pagado';
     pedido.comprobanteTransferencia = archivoComprobante;
-    
+
     // Algoritmo de rotación de cuenta bancaria al acumular 45 comprobantes
     const cta = this.cuentaActiva.value;
     cta.comprobantesProcesados += 1;
@@ -422,6 +524,15 @@ class AppStore {
     if (nuevaCarga > turno.capacidadMax) {
       throw new Error(`Excede la capacidad máxima del furgón (${turno.capacidadMax} botellones). Carga actual: ${turno.botellonesCargados}.`);
     }
+    if (this.state.inventario.llenosCentral < pedido.cantidadBidones) {
+      throw new Error(`No hay suficientes botellones llenos en bodega central (${this.state.inventario.llenosCentral} disponibles).`);
+    }
+
+    // Si el turno anterior ya se liquidó, se abre uno nuevo
+    if (turno.estado === 'finalizado') {
+      turno.estado = 'en_ruta';
+      turno.fecha = hoyISO();
+    }
 
     turno.pedidosIds.push(pedidoId);
     turno.botellonesCargados = nuevaCarga;
@@ -432,29 +543,53 @@ class AppStore {
     this.sincronizarInventario();
   }
 
-  // Acciones Chofer (Tarea #49)
+  // Acciones Chofer (Tarea #49 / PBI 71)
   confirmarEntregaChofer(pedidoId: string) {
     const pedido = this.state.pedidos.find(p => p.id === pedidoId);
     if (!pedido) return;
 
+    // Entrega normal: lleno entregado, vacío recibido (los envases a bordo no cambian)
     pedido.estado = 'entregado';
-    
-    // Si tenía deuda pendiente previa y el cliente devolvió el envase
-    if (pedido.deudaEnvasesPendiente > 0) {
-      const cliente = this.state.clientes.find(c => c.id === pedido.clienteId);
-      if (cliente) {
-        cliente.deudaEnvases = Math.max(0, cliente.deudaEnvases - 1);
-      }
-      pedido.tieneAlertaDeuda = false;
-      pedido.deudaEnvasesPendiente = Math.max(0, pedido.deudaEnvasesPendiente - 1);
-    }
+    pedido.cantidadEntregada = pedido.cantidadBidones;
+    pedido.envasesNoDevueltos = 0;
+    if (pedido.incidencia?.tipo === 'ausente') pedido.incidencia.resuelto = true;
 
     this.sincronizarInventario();
   }
 
-  reportarIncidenciaChofer(pedidoId: string, tipo: 'pendiente' | 'ausente' | 'roto', detalle: string) {
+  /**
+   * Retiro de envases pendientes de entregas anteriores.
+   * Resuelve la alerta activa una sola vez, conservando el registro como historial.
+   */
+  registrarRetiroChofer(pedidoId: string) {
+    const pedido = this.state.pedidos.find(p => p.id === pedidoId);
+    if (!pedido) return 0;
+
+    const registros = this.state.registrosEnvases.filter(r => r.clienteId === pedido.clienteId && r.estado === 'pendiente');
+    const total = registros.reduce((acc, r) => acc + r.cantidad, 0);
+    registros.forEach(r => {
+      r.estado = 'retirado';
+      r.fechaResolucion = ahoraISO();
+    });
+
+    // Los vacíos retirados suben al furgón
+    this.state.turnoActivo.botellonesCargados += total;
+    this.sincronizarInventario();
+    return total;
+  }
+
+  reportarIncidenciaChofer(
+    pedidoId: string,
+    tipo: 'pendiente' | 'ausente' | 'roto',
+    detalle: string,
+    opciones: { cantidad?: number; aceptacionCliente?: boolean } = {}
+  ) {
     const pedido = this.state.pedidos.find(p => p.id === pedidoId);
     if (!pedido) return;
+
+    if (tipo === 'roto' && !opciones.aceptacionCliente) {
+      throw new Error('La entrega parcial requiere informar al cliente y registrar su aceptación.');
+    }
 
     pedido.incidencia = {
       tipo,
@@ -463,51 +598,120 @@ class AppStore {
       resuelto: false
     };
 
+    const turno = this.state.turnoActivo;
+
     if (tipo === 'pendiente') {
-      // Se entregó el bidón pero el cliente no entregó el envase vacío -> genera deuda en ficha cliente
+      // Se entregó el agua pero el cliente no devolvió el vacío -> registro con fecha en ficha cliente
+      const n = Math.min(Math.max(1, opciones.cantidad ?? 1), pedido.cantidadBidones);
       pedido.estado = 'entregado';
-      const cliente = this.state.clientes.find(c => c.id === pedido.clienteId);
-      if (cliente) {
-        cliente.deudaEnvases += 1;
-      }
-      pedido.tieneAlertaDeuda = true;
-      pedido.deudaEnvasesPendiente = (pedido.deudaEnvasesPendiente || 0) + 1;
+      pedido.cantidadEntregada = pedido.cantidadBidones;
+      pedido.envasesNoDevueltos = n;
+      turno.botellonesCargados = Math.max(0, turno.botellonesCargados - n);
+      this.state.registrosEnvases.push({
+        id: `env-${Date.now()}`,
+        clienteId: pedido.clienteId,
+        clienteNombre: pedido.clienteNombre,
+        pedidoCodigo: pedido.codigo,
+        cantidad: n,
+        fechaOrigen: hoyISO(),
+        estado: 'pendiente'
+      });
     } else if (tipo === 'ausente') {
-      // Cliente no estaba -> no se entrega y sigue en furgón para reprogramación
+      // Cliente no estaba -> no se entrega y sigue en furgón; el administrativo coordina el regreso
       pedido.estado = 'ausente';
     } else if (tipo === 'roto') {
-      // Fisurado en furgón -> merma física entra a bodega de rotos
+      // Fisurado en furgón -> entrega parcial aceptada; merma física entra a bodega de rotos
+      const k = Math.min(Math.max(1, opciones.cantidad ?? 1), pedido.cantidadBidones);
       pedido.estado = 'parcial';
-      this.state.inventario.rotosBodega += 1;
-      this.state.turnoActivo.botellonesCargados = Math.max(0, this.state.turnoActivo.botellonesCargados - 1);
+      pedido.aceptacionParcial = true;
+      pedido.cantidadEntregada = pedido.cantidadBidones - k;
+      pedido.envasesNoDevueltos = 0;
+      this.state.inventario.rotosBodega += k;
+      turno.botellonesCargados = Math.max(0, turno.botellonesCargados - k);
     }
 
     this.sincronizarInventario();
   }
 
+  // Ausencia: volver hoy (sigue en la ruta) o reprogramar para mañana (vuelve a la cola de despacho)
+  reprogramarAusente(pedidoId: string, cuando: 'hoy' | 'manana') {
+    const pedido = this.state.pedidos.find(p => p.id === pedidoId);
+    const turno = this.state.turnoActivo;
+    if (!pedido || pedido.estado !== 'ausente') return;
+
+    if (pedido.incidencia) pedido.incidencia.resuelto = true;
+
+    if (cuando === 'hoy') {
+      pedido.estado = 'en_despacho';
+      pedido.promesaEntrega = 'Hoy (reintento)';
+    } else {
+      pedido.estado = 'pagado';
+      pedido.promesaEntrega = 'Mañana (reprogramado)';
+      turno.pedidosIds = turno.pedidosIds.filter(id => id !== pedidoId);
+      turno.botellonesCargados = Math.max(0, turno.botellonesCargados - pedido.cantidadBidones);
+      this.state.inventario.llenosCentral += pedido.cantidadBidones;
+    }
+    this.sincronizarInventario();
+  }
+
+  // Saldo de un parcial: pasa al turno siguiente con el pago original (sin nuevo cobro)
+  programarSaldoParcial(pedidoId: string) {
+    const original = this.state.pedidos.find(p => p.id === pedidoId);
+    if (!original || original.estado !== 'parcial' || original.saldoProgramado) return;
+
+    const saldo = original.cantidadBidones - (original.cantidadEntregada ?? original.cantidadBidones);
+    if (saldo <= 0) return;
+
+    original.saldoProgramado = true;
+    this.state.pedidos.unshift({
+      ...clonar(original),
+      id: `ped-${Date.now()}`,
+      codigo: `${original.codigo}-S`,
+      cantidadBidones: saldo,
+      total: 0,
+      estado: 'pagado',
+      fechaCreacion: ahoraISO(),
+      promesaEntrega: 'Próximo turno (saldo pagado)',
+      pedidoOrigenCodigo: original.codigo,
+      incidencia: undefined,
+      cantidadEntregada: undefined,
+      envasesNoDevueltos: undefined,
+      aceptacionParcial: undefined,
+      saldoProgramado: undefined,
+      linkWebpay: undefined
+    });
+    this.sincronizarInventario();
+  }
+
   // Liquidación del furgón al retornar a bodega central (descarga de vacíos y cuadratura física)
   liquidarRetornoFurgonCentral() {
-    const pedidos = this.state.pedidos.filter(p => this.state.turnoActivo.pedidosIds.includes(p.id));
-    
-    // Vacíos recolectados de pedidos entregados entran a bodega central de vacíos
-    const vaciosRecolectados = pedidos
-      .filter(p => p.estado === 'entregado' && p.incidencia?.tipo !== 'pendiente')
-      .reduce((sum, p) => sum + p.cantidadBidones, 0);
+    const turno = this.state.turnoActivo;
+    const pedidos = this.state.pedidos.filter(p => turno.pedidosIds.includes(p.id));
 
-    // Llenos no entregados (ausente) reingresan a bodega central de llenos
-    const llenosNoEntregados = pedidos
-      .filter(p => p.estado === 'ausente')
-      .reduce((sum, p) => sum + p.cantidadBidones, 0);
+    // Llenos que vuelven: ausentes y paradas no visitadas
+    const pedidosConLlenos = pedidos.filter(p => p.estado === 'ausente' || p.estado === 'en_despacho');
+    const llenosNoEntregados = pedidosConLlenos.reduce((sum, p) => sum + p.cantidadBidones, 0);
+
+    // Todo lo demás a bordo son vacíos (intercambiados o retirados)
+    const vaciosRecolectados = Math.max(0, turno.botellonesCargados - llenosNoEntregados);
 
     this.state.inventario.vaciosCentral += vaciosRecolectados;
-    this.state.inventario.llenosCentral += llenosNoEntregados;
-    
+    this.state.inventario.llenosCentral += Math.min(llenosNoEntregados, turno.botellonesCargados);
+
+    // Los no entregados vuelven a la cola de despacho con su pago original
+    pedidosConLlenos.forEach(p => {
+      p.estado = 'pagado';
+      p.promesaEntrega = 'Mañana (reprogramado)';
+      if (p.incidencia) p.incidencia.resuelto = true;
+    });
+
     // Furgón descarga por completo al finalizar su turno
-    this.state.turnoActivo.botellonesCargados = 0;
-    this.state.turnoActivo.pedidosIds = [];
-    this.state.turnoActivo.estado = 'finalizado';
+    turno.botellonesCargados = 0;
+    turno.pedidosIds = [];
+    turno.estado = 'finalizado';
 
     this.sincronizarInventario();
+    return { vaciosRecolectados, llenosNoEntregados };
   }
 
   // Recarga/Lavado de botellones en planta (vacíos a llenos)
@@ -529,6 +733,19 @@ class AppStore {
     }
   }
 
+  // Exclusivo Administrador: baja de envase no retornado tras 60 días (queda marca en ficha)
+  darDeBajaNoRetornado(registroId: string) {
+    const reg = this.state.registrosEnvases.find(r => r.id === registroId);
+    if (!reg || reg.estado !== 'pendiente') return;
+    if (diasDesde(reg.fechaOrigen) < 60) {
+      throw new Error('Solo se puede dar de baja un envase con 60 días o más sin devolución.');
+    }
+    reg.estado = 'baja';
+    reg.fechaResolucion = ahoraISO();
+    this.state.inventario.bajasDefinitivas60d += reg.cantidad;
+    this.sincronizarInventario();
+  }
+
   cambiarCapacidadVehiculo(vehiculoId: string, nuevaCapacidad: number) {
     const vehiculo = this.state.vehiculos.find(v => v.id === vehiculoId);
     if (vehiculo) {
@@ -542,12 +759,13 @@ class AppStore {
 
   resetDemoData() {
     localStorage.removeItem(STORAGE_KEY);
-    this.state.clientes = JSON.parse(JSON.stringify(clientesIniciales));
-    this.state.pedidos = JSON.parse(JSON.stringify(pedidosIniciales));
-    this.state.vehiculos = JSON.parse(JSON.stringify(vehiculosIniciales));
-    this.state.cuentasBancarias = JSON.parse(JSON.stringify(cuentasBancariasIniciales));
-    this.state.turnoActivo = JSON.parse(JSON.stringify(turnoActivoInicial));
-    this.state.inventario = JSON.parse(JSON.stringify(inventarioInicial));
+    this.state.clientes = clonar(clientesIniciales);
+    this.state.pedidos = clonar(pedidosIniciales);
+    this.state.vehiculos = clonar(vehiculosIniciales);
+    this.state.cuentasBancarias = clonar(cuentasBancariasIniciales);
+    this.state.registrosEnvases = clonar(registrosEnvasesIniciales);
+    this.state.turnoActivo = clonar(turnoActivoInicial);
+    this.state.inventario = clonar(inventarioInicial);
     this.state.notificacionRotacion = null;
     this.sincronizarInventario();
   }

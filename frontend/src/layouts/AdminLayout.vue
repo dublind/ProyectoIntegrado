@@ -1,0 +1,501 @@
+<template>
+  <div class="admin-shell">
+    <!-- Barra lateral de navegación (en móvil pasa a barra inferior) -->
+    <aside class="sidebar">
+      <RouterLink to="/indicadores" class="brand">
+        <span class="brand-logo"><Droplets :size="20" /></span>
+        <span class="brand-text">
+          <span class="brand-title">Aguas purificadas</span>
+          <span class="brand-sub">Gestión y reparto</span>
+        </span>
+      </RouterLink>
+
+      <nav class="side-nav" aria-label="Módulos del panel">
+        <span class="nav-section">Operación</span>
+        <RouterLink v-for="item in navItems" :key="item.to" :to="item.to" class="side-link">
+          <component :is="item.icon" :size="18" class="side-icon" />
+          <span class="side-label">{{ item.label }}</span>
+          <span v-if="item.badge && item.badge.value > 0" :class="['side-badge', item.badgeClass]">
+            {{ item.badge.value }}
+          </span>
+        </RouterLink>
+
+        <span class="nav-section">Terreno</span>
+        <RouterLink to="/chofer" class="side-link side-link-driver">
+          <Smartphone :size="18" class="side-icon" />
+          <span class="side-label label-long">App del chofer</span>
+          <span class="side-label label-short">Chofer</span>
+          <span v-if="paradasPendientes > 0" class="side-badge badge-live">{{ paradasPendientes }}</span>
+        </RouterLink>
+      </nav>
+
+      <div class="side-footer">
+        <div class="profile-avatar">{{ usuario.iniciales }}</div>
+        <div class="profile-info">
+          <span class="profile-name">{{ usuario.nombre }}</span>
+          <span class="profile-role">{{ usuario.rol }}</span>
+        </div>
+      </div>
+    </aside>
+
+    <div class="main-column">
+      <header class="topbar">
+        <div class="topbar-title">
+          <h1>{{ route.meta.title }}</h1>
+          <p>{{ route.meta.descripcion }}</p>
+        </div>
+        <RouterLink to="/inventario" class="stock-pill" title="Ecuación de cuadratura continua de stock">
+          <span class="stock-dot"></span>
+          <span class="stock-label">Stock total</span>
+          <strong>{{ appStore.totalStockContinuo.value }}</strong>
+          <span class="stock-breakdown">{{ appStore.state.inventario.llenosCentral }} disponibles · {{
+            appStore.state.inventario.enTransito }} en ruta</span>
+        </RouterLink>
+      </header>
+
+      <!-- Alerta global de rotación de cuenta -->
+      <div v-if="appStore.state.notificacionRotacion" class="alert-banner" role="alert">
+        <RefreshCw :size="18" />
+        <div class="alert-text">
+          <strong>Conmutación automática de cuenta bancaria (regla de 45 comprobantes)</strong>
+          <p>{{ appStore.state.notificacionRotacion }}</p>
+        </div>
+        <button @click="appStore.state.notificacionRotacion = null" class="btn-close" aria-label="Cerrar aviso">&times;</button>
+      </div>
+
+      <main class="workspace">
+        <RouterView v-slot="{ Component }">
+          <Transition name="fade-view" mode="out-in">
+            <component :is="Component" />
+          </Transition>
+        </RouterView>
+      </main>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue';
+import { useRoute } from 'vue-router';
+import { ClipboardList, Droplets, LayoutDashboard, MapPinned, RefreshCw, Smartphone, Truck, Warehouse } from 'lucide-vue-next';
+import { appStore } from '../store/useAppStore';
+
+const route = useRoute();
+
+const pedidosPorCobrar = computed(() => appStore.state.pedidos.filter(p => p.estado === 'pendiente_pago').length);
+const pedidosPorDespachar = computed(() => appStore.state.pedidos.filter(p => p.estado === 'pagado').length);
+const alertasInventario = computed(() => appStore.registrosPendientes.value.length);
+const paradasPendientes = computed(() => appStore.pedidosDespachoActivo.value.filter(p => p.estado === 'en_despacho').length);
+
+const navItems = [
+  { to: '/indicadores', label: 'Indicadores', icon: LayoutDashboard },
+  { to: '/pedidos', label: 'Pedidos', icon: ClipboardList, badge: pedidosPorCobrar, badgeClass: 'badge-warn' },
+  { to: '/despacho', label: 'Despacho', icon: Truck, badge: pedidosPorDespachar, badgeClass: '' },
+  { to: '/inventario', label: 'Inventario', icon: Warehouse, badge: alertasInventario, badgeClass: 'badge-warn' },
+  { to: '/seguimiento', label: 'Seguimiento', icon: MapPinned }
+];
+
+// El dueño revisa indicadores e inventario; la secretaría opera pedidos y despacho
+const usuario = computed(() => {
+  if (route.path.startsWith('/indicadores') || route.path.startsWith('/inventario')) {
+    return { nombre: 'Erick Operaciones', rol: 'Administrador / dueño', iniciales: 'EO' };
+  }
+  return { nombre: 'Secretaría', rol: 'Ventas y coordinación', iniciales: 'SV' };
+});
+</script>
+
+<style scoped>
+.admin-shell {
+  display: grid;
+  grid-template-columns: 248px 1fr;
+  min-height: 100vh;
+  background: var(--bg-main);
+}
+
+/* ==========================================================================
+   SIDEBAR
+   ========================================================================== */
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--zun-blanco);
+  border-right: 1px solid var(--zun-border);
+  padding: 22px 16px;
+  gap: 26px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 8px;
+  text-decoration: none;
+}
+
+.brand-logo {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--zun-negro);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-title {
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: var(--zun-negro);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.brand-sub {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--zun-gris);
+}
+
+.side-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.nav-section {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--zun-gris-medium);
+  padding: 14px 12px 6px;
+}
+
+.side-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--zun-gris-dark);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.side-link:hover {
+  color: var(--zun-rojo);
+  border-color: var(--zun-rojo);
+  box-shadow: 2px 2px 0 var(--zun-rojo);
+  transform: translate(-1px, -1px);
+}
+
+.side-link.router-link-active {
+  background: var(--zun-negro);
+  color: #ffffff;
+  border-color: var(--zun-negro);
+}
+
+.side-icon {
+  flex-shrink: 0;
+}
+
+.side-label {
+  flex: 1;
+}
+
+.label-short {
+  display: none;
+}
+
+.side-badge {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-align: center;
+  background: var(--zun-negro);
+  color: #ffffff;
+}
+
+.side-link.router-link-active .side-badge {
+  background: #ffffff;
+  color: var(--zun-negro);
+}
+
+.side-badge.badge-warn {
+  background: var(--zun-rojo);
+  color: #ffffff;
+}
+
+.side-badge.badge-live {
+  background: var(--zun-verde);
+  color: #ffffff;
+}
+
+.side-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 10px 0;
+  border-top: 1px solid var(--zun-border);
+}
+
+.profile-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--zun-blanco-sutil);
+  border: 1px solid var(--zun-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: var(--zun-negro);
+  flex-shrink: 0;
+}
+
+.profile-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.profile-name {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--zun-negro);
+}
+
+.profile-role {
+  font-size: 0.72rem;
+  color: var(--zun-gris);
+}
+
+/* ==========================================================================
+   COLUMNA PRINCIPAL
+   ========================================================================== */
+.main-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 32px;
+  background: rgba(249, 250, 255, 0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--zun-border);
+}
+
+.topbar-title h1 {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: var(--zun-negro);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.topbar-title p {
+  font-size: 0.84rem;
+  color: var(--zun-gris);
+}
+
+.stock-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--zun-blanco);
+  border: 1px solid var(--zun-border);
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--zun-text);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.stock-pill:hover {
+  border-color: var(--zun-rojo);
+  box-shadow: 2px 2px 0 var(--zun-rojo);
+  transform: translate(-1px, -1px);
+}
+
+.stock-dot {
+  width: 9px;
+  height: 9px;
+  background: var(--zun-verde);
+  border-radius: 50%;
+}
+
+.stock-pill strong {
+  color: var(--zun-negro);
+}
+
+.stock-breakdown {
+  color: var(--zun-gris);
+  font-size: 0.74rem;
+}
+
+.alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 20px 32px 0;
+  padding: 14px 18px;
+  background: var(--zun-ambar-light);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: var(--radius-sm);
+  color: #78350f;
+  font-size: 0.86rem;
+}
+
+.alert-text {
+  flex: 1;
+}
+
+.workspace {
+  flex: 1;
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 28px 32px 48px;
+}
+
+.fade-view-enter-active,
+.fade-view-leave-active {
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.fade-view-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.fade-view-leave-to {
+  opacity: 0;
+}
+
+/* ==========================================================================
+   RESPONSIVE: barra inferior tipo app en pantallas angostas
+   ========================================================================== */
+@media (max-width: 900px) {
+  .admin-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: auto;
+    z-index: 200;
+    flex-direction: row;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    border-right: none;
+    border-top: 1px solid var(--zun-border);
+    gap: 0;
+  }
+
+  .brand,
+  .side-footer,
+  .nav-section {
+    display: none;
+  }
+
+  .side-nav {
+    flex-direction: row;
+    justify-content: space-around;
+    gap: 2px;
+  }
+
+  .side-link {
+    position: relative;
+    flex-direction: column;
+    gap: 3px;
+    padding: 7px 4px;
+    flex: 1;
+    font-size: 0.66rem;
+    text-align: center;
+  }
+
+  .side-link:hover {
+    box-shadow: none;
+    transform: none;
+  }
+
+  .side-label {
+    white-space: nowrap;
+  }
+
+  .label-long {
+    display: none;
+  }
+
+  .label-short {
+    display: inline;
+  }
+
+  .side-badge {
+    position: absolute;
+    top: 2px;
+    right: calc(50% - 22px);
+    min-width: 18px;
+    padding: 0 5px;
+    font-size: 0.62rem;
+  }
+
+  .topbar {
+    padding: 14px 16px;
+  }
+
+  .topbar-title h1 {
+    font-size: 1.15rem;
+  }
+
+  .topbar-title p,
+  .stock-label,
+  .stock-breakdown {
+    display: none;
+  }
+
+  .alert-banner {
+    margin: 14px 16px 0;
+  }
+
+  .workspace {
+    padding: 18px 16px 96px;
+  }
+}
+</style>
