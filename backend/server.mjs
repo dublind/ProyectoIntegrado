@@ -1,3 +1,6 @@
+import pkg from 'whatsapp-web.js';
+const { Client, LocalAuth } = pkg;
+import qrcode from 'qrcode-terminal';
 import http from 'node:http';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { readFile, writeFile, mkdir, unlink } from 'node:fs/promises';
@@ -7,6 +10,74 @@ import { openDatabase, root } from './db.mjs';
 import { execute, ApiError, fail } from './service.mjs';
 import { dispatchNotifications } from './services/notifications.mjs';
 import { receiveMessages, verifySignature, verifySubscription } from './services/whatsapp.mjs';
+
+const client = new Client({
+  authStrategy: new LocalAuth(),
+  puppeteer: {
+    headless: true,
+    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  },
+});
+
+client.on('qr', (qr) => {
+  console.log('--- ESCANEA ESTE CÓDIGO QR CON TU CELULAR ---');
+  qrcode.generate(qr, { small: true });
+});
+
+client.on('ready', () => {
+  console.log('¡Conexión exitosa con WhatsApp lista para el Sprint!');
+});
+
+client.on('message', async (msg) => {
+  console.log(`Mensaje recibido de ${msg.from}: ${msg.body}`);
+
+  if (msg.body.toLowerCase().includes('solicitud') || msg.body.toLowerCase().includes('agua')) {
+    try {
+      const fakeWebhookBody = {
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  messages: [
+                    {
+                      id: msg.id._serialized,
+                      from: msg.from.replace('@c.us', ''),
+                      type: 'text',
+                      text: { body: msg.body },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      const localDb = await openDatabase();
+      try {
+        await localDb.transaction((tx) => receiveMessages(tx, fakeWebhookBody));
+      } finally {
+        await localDb.close();
+      }
+      console.log(`[Base de Datos] Mensaje de ${msg.from} guardado de forma exitosa.`);
+      await msg.reply(
+        '¡Hola! Recibimos tu solicitud de agua purificada. Procesando en el sistema...',
+      );
+    } catch (error) {
+      console.error('Error al intentar guardar la solicitud en la base de datos:', error);
+      await msg.reply(
+        '¡Hola! Recibimos tu mensaje, pero estamos experimentando problemas técnicos para registrarlo.',
+      );
+    }
+  }
+});
+
+const isMainModule =
+  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMainModule) client.initialize();
+
 // options.sender reemplaza el canal de WhatsApp (pruebas); sin él se usan las variables de entorno
 export function createServer(db, options = {}) {
   const sessions = new Map(),
@@ -164,7 +235,7 @@ export function createServer(db, options = {}) {
     }
   });
 }
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule) {
   try {
     process.loadEnvFile(root + '/.env');
   } catch (e) {
