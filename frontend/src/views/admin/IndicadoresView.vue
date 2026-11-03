@@ -86,6 +86,24 @@
         </div>
       </section>
     </div>
+
+    <!-- Actividad en vivo: lo que registran el panel y el chofer -->
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2 class="card-title">Actividad del día</h2>
+          <p class="card-sub">Se actualiza al instante cuando el chofer registra algo en su app.</p>
+        </div>
+      </div>
+      <div v-if="actividad.length === 0" class="empty-box">Aún no hay movimientos registrados.</div>
+      <ul v-else class="feed">
+        <li v-for="a in actividad" :key="a.id" :class="['feed-item', `is-${a.tipo}`]">
+          <span class="feed-dot"></span>
+          <span class="feed-text">{{ a.texto }}</span>
+          <span class="feed-meta">{{ a.origen === 'chofer' ? 'Chofer' : 'Panel' }} · {{ a.fecha.slice(11) }}</span>
+        </li>
+      </ul>
+    </section>
   </div>
 </template>
 
@@ -96,6 +114,7 @@ import { appStore } from '../../store/useAppStore';
 import { formatCLP, formatEstadoStop, getBadgeStopClass, hoyISO } from '../../utils/formato';
 
 const inv = computed(() => appStore.state.inventario);
+const actividad = computed(() => appStore.state.actividad.slice(0, 12));
 const turno = computed(() => appStore.state.turnoActivo);
 const paradas = computed(() => appStore.pedidosDespachoActivo.value);
 
@@ -267,6 +286,48 @@ const totalPendientes = computed(() => porCobrar.value + porAsignar.value + ause
 .row-danger {
   background: var(--zun-rojo-light);
   border-color: rgba(255, 38, 42, 0.3);
+}
+
+.feed {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.feed-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--zun-border);
+  font-size: 0.86rem;
+}
+
+.feed-item:last-child {
+  border-bottom: none;
+}
+
+.feed-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--zun-gris-light);
+  flex-shrink: 0;
+}
+
+.feed-item.is-exito .feed-dot { background: var(--zun-verde); }
+.feed-item.is-alerta .feed-dot { background: #eab308; }
+.feed-item.is-error .feed-dot { background: var(--zun-rojo); }
+
+.feed-text {
+  flex: 1;
+}
+
+.feed-meta {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--zun-gris);
+  white-space: nowrap;
 }
 
 @media (max-width: 1000px) {

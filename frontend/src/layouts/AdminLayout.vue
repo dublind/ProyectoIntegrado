@@ -44,6 +44,13 @@
           <h1>{{ route.meta.title }}</h1>
           <p>{{ route.meta.descripcion }}</p>
         </div>
+        <span class="live-pill" title="Se actualiza al instante con lo que registra el chofer">
+          <span class="live-dot"></span> En vivo
+        </span>
+        <RouterLink to="/inventario" :class="['audit-pill', { fail: !appStore.auditoria.value.ok }]"
+          :title="appStore.auditoria.value.ok ? 'Todos los módulos cuadran' : 'Hay un descuadre: revisa Inventario'">
+          {{ appStore.auditoria.value.ok ? 'Cuadratura OK' : 'Descuadre' }}
+        </RouterLink>
         <RouterLink to="/inventario" class="stock-pill" title="Ecuación de cuadratura continua de stock">
           <span class="stock-dot"></span>
           <span class="stock-label">Stock total</span>
@@ -64,6 +71,7 @@
       </div>
 
       <main class="workspace">
+        <FlujoDelDia class="flujo-bar" />
         <RouterView v-slot="{ Component }">
           <Transition name="fade-view" mode="out-in">
             <component :is="Component" />
@@ -78,9 +86,18 @@
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { ClipboardList, Droplets, LayoutDashboard, MapPinned, RefreshCw, Smartphone, Truck, Warehouse } from 'lucide-vue-next';
+import FlujoDelDia from '../components/FlujoDelDia.vue';
 import { appStore } from '../store/useAppStore';
+import { notificar } from '../store/useToast';
 
 const route = useRoute();
+
+// Lo que el chofer registra en su app (otra pestaña) aparece aquí al instante
+appStore.alRecibirActividadRemota(nuevas => {
+  nuevas.filter(a => a.origen === 'chofer').reverse().forEach(a => {
+    notificar(`Chofer: ${a.texto}`, a.tipo === 'error' ? 'error' : a.tipo === 'exito' ? 'exito' : 'info', 5000);
+  });
+});
 
 const pedidosPorCobrar = computed(() => appStore.state.pedidos.filter(p => p.estado === 'pendiente_pago').length);
 const pedidosPorDespachar = computed(() => appStore.state.pedidos.filter(p => p.estado === 'pagado').length);
@@ -326,6 +343,59 @@ const usuario = computed(() => {
 .topbar-title p {
   font-size: 0.84rem;
   color: var(--zun-gris);
+}
+
+.topbar-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #065f46;
+  white-space: nowrap;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--zun-verde);
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+  animation: live 1.8s infinite;
+}
+
+@keyframes live {
+  70% { box-shadow: 0 0 0 7px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.audit-pill {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--zun-verde-light);
+  color: #065f46;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.audit-pill.fail {
+  background: var(--zun-rojo);
+  color: #ffffff;
+  border-color: var(--zun-rojo);
+}
+
+.flujo-bar {
+  margin-bottom: 22px;
 }
 
 .stock-pill {

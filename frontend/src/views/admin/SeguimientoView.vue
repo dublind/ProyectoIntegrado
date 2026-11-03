@@ -15,14 +15,14 @@
             <component :is="enPausa ? Play : Pause" :size="14" /> {{ enPausa ? 'Reanudar' : 'Pausar' }}
           </button>
           <div class="speed-group" role="group" aria-label="Velocidad de simulación">
-            <button v-for="v in [1, 3, 6]" :key="v" :class="['speed-btn', { active: velocidad === v }]" @click="velocidad = v">
+            <button v-for="v in [1, 4, 10]" :key="v" :class="['speed-btn', { active: velocidad === v }]" @click="velocidad = v">
               x{{ v }}
             </button>
           </div>
         </div>
         <p class="text-xs text-muted">
-          Recorrido simulado sobre las paradas reales del turno en orden geográfico. Más adelante se reemplaza por la
-          ubicación GPS del celular del chofer.
+          El furgón 1 sigue la ruta real del turno por calles: avanza a la próxima parada y espera ahí hasta que el chofer
+          confirma en su app. {{ rutasReales ? 'Rutas calculadas por calles (OSRM).' : 'Ruteo por calles no disponible: recorrido aproximado.' }}
         </p>
       </section>
 
@@ -34,14 +34,15 @@
             <strong>{{ f.nombre }}</strong>
             <span class="font-mono text-xs text-muted">{{ f.patente }} · {{ f.chofer }}</span>
           </div>
-          <span :class="['badge', f.demo ? 'badge-neutral' : 'badge-success']">{{ f.demo ? 'Demo' : 'Turno activo' }}</span>
+          <span :class="['badge', f.demo ? 'badge-neutral' : 'badge-success']">{{ f.demo ? 'Demo' : 'Turno real' }}</span>
         </div>
         <div class="truck-status">
+          <span :class="['phase', `phase-${f.fase}`]">{{ etiquetaFase[f.fase] }}</span>
           <span class="status-line">{{ f.estadoTexto }}</span>
-          <div class="truck-metrics">
+          <div v-if="f.fase !== 'estacionado'" class="truck-metrics">
             <span><Gauge :size="13" /> {{ f.velocidadKmh }} km/h</span>
             <span v-if="f.etaMin !== null"><Clock :size="13" /> {{ f.etaMin }} min</span>
-            <span><Route :size="13" /> {{ f.kmRecorridos.toFixed(1) }} / {{ f.kmTotales.toFixed(1) }} km</span>
+            <span v-if="f.kmRestantes !== null"><Route :size="13" /> {{ f.kmRestantes.toFixed(1) }} km</span>
           </div>
         </div>
       </section>
@@ -61,102 +62,130 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { Clock, Gauge, Pause, Play, Route, Truck } from 'lucide-vue-next';
 import { appStore } from '../../store/useAppStore';
 import { notificar } from '../../store/useToast';
-import { BODEGA_CENTRAL, distanciaKm } from '../../utils/geo';
+import { BODEGA_CENTRAL } from '../../utils/geo';
 import { crearMapa } from '../../utils/mapa';
 import type { LineaMapa, MapaAdapter, MarcadorMapa, ProveedorMapa } from '../../utils/mapa';
+import { puntoEnTrazado, trazarRuta } from '../../utils/rutas';
+import type { Trazado } from '../../utils/rutas';
 import type { Coordenadas, Pedido } from '../../types';
 
-interface Tramo {
-  desde: Coordenadas;
-  hasta: Coordenadas;
-  km: number;
-  destino: string; // nombre de la parada a la que lleva este tramo
-}
+type Fase = 'estacionado' | 'calculando' | 'manejando' | 'semaforo' | 'en_parada';
 
-interface FurgonSim {
+// Datos visibles en el panel (reactivos)
+interface FurgonVista {
   id: string;
   nombre: string;
   patente: string;
   chofer: string;
   color: string;
   demo: boolean;
-  tramos: Tramo[];
-  kmTotales: number;
-  kmRecorridos: number;
+  fase: Fase;
+  estadoTexto: string;
   velocidadKmh: number;
   etaMin: number | null;
-  estadoTexto: string;
+  kmRestantes: number | null;
 }
+
+// Estado interno de la simulación (no reactivo)
+interface Objetivo {
+  id: string;
+  nombre: string;
+  coords: Coordenadas;
+  esBodega: boolean;
+}
+
+interface Movimiento {
+  trazado: Trazado;
+  m: number; // metros recorridos en el trazado
+  semaforoIdx: number;
+  espera: number; // segundos simulados detenido en semáforo
+}
+
+interface Simulacion {
+  pos: Coordenadas;
+  v: number; // m/s
+  objetivoId: string | null;
+  mov: Movimiento | null;
+  esperaParada: number;
+  demoIdx: number;
+}
+
+const etiquetaFase: Record<Fase, string> = {
+  estacionado: 'En bodega',
+  calculando: 'Calculando ruta',
+  manejando: 'En movimiento',
+  semaforo: 'Detenido en semáforo',
+  en_parada: 'En la parada'
+};
 
 const mapEl = ref<HTMLElement | null>(null);
 const enPausa = ref(false);
-const velocidad = ref(1);
+const velocidad = ref(4);
 const seleccionado = ref<string | null>(null);
 const proveedor = ref<ProveedorMapa | null>(null);
+const rutasReales = ref(true);
 
-// Objetos del mapa fuera del estado reactivo (Leaflet/Google no deben envolverse en proxies)
 let mapa: MapaAdapter | null = null;
 let marcadoresParadas: MarcadorMapa[] = [];
 const marcadoresFurgon = new Map<string, MarcadorMapa>();
-const rutasFurgon = new Map<string, LineaMapa>();
+const lineasTramo = new Map<string, LineaMapa>();
+const lineasPlan = new Map<string, LineaMapa[]>();
 let frameId = 0;
 let ultimoTs = 0;
 let desmontado = false;
+let tokenPlan = 0;
+
+// Física simple de ciudad: crucero ~30-43 km/h, acelera 1,6 m/s² y frena 2,2 m/s²
+const ACELERACION = 1.6;
+const FRENADO = 2.2;
+// 1 segundo real = 5 segundos simulados a velocidad x1
+const ESCALA_TIEMPO = 5;
+const ESPERA_PARADA_DEMO = 90;
+const ESPERA_BODEGA_DEMO = 60;
 
 // Ruta de demostración del furgón 2 (oriente de Santiago)
-const RUTA_DEMO: { nombre: string; coords: Coordenadas }[] = [
-  { nombre: 'Av. Apoquindo 4500, Las Condes', coords: { lat: -33.4135, lng: -70.5830 } },
-  { nombre: 'Vitacura 3200, Vitacura', coords: { lat: -33.4020, lng: -70.5990 } },
-  { nombre: 'Av. Ossa 1600, La Reina', coords: { lat: -33.4410, lng: -70.5560 } },
-  { nombre: 'Av. Grecia 2100, Ñuñoa', coords: { lat: -33.4640, lng: -70.5980 } }
+const RUTA_DEMO: Objetivo[] = [
+  { id: 'demo-1', nombre: 'Av. Apoquindo 4500, Las Condes', coords: { lat: -33.4135, lng: -70.5830 }, esBodega: false },
+  { id: 'demo-2', nombre: 'Vitacura 3200, Vitacura', coords: { lat: -33.4020, lng: -70.5990 }, esBodega: false },
+  { id: 'demo-3', nombre: 'Av. Ossa 1600, La Reina', coords: { lat: -33.4410, lng: -70.5560 }, esBodega: false },
+  { id: 'demo-4', nombre: 'Av. Grecia 2100, Ñuñoa', coords: { lat: -33.4640, lng: -70.5980 }, esBodega: false },
+  { id: 'demo-bodega', nombre: 'Bodega central', coords: BODEGA_CENTRAL, esBodega: true }
 ];
+const BODEGA: Objetivo = { id: 'bodega', nombre: 'Bodega central', coords: BODEGA_CENTRAL, esBodega: true };
 
-/**
- * Convierte una línea recta en un recorrido en "L" (primero latitud, luego longitud),
- * que se parece más a manejar por la cuadrícula de calles que una diagonal.
- */
-function tramosEnL(puntos: { nombre: string; coords: Coordenadas }[]): Tramo[] {
-  const tramos: Tramo[] = [];
-  for (let i = 0; i < puntos.length - 1; i++) {
-    const a = puntos[i].coords;
-    const b = puntos[i + 1].coords;
-    const esquina = { lat: b.lat, lng: a.lng };
-    const destino = puntos[i + 1].nombre;
-    tramos.push({ desde: a, hasta: esquina, km: distanciaKm(a, esquina), destino });
-    tramos.push({ desde: esquina, hasta: b, km: distanciaKm(esquina, b), destino });
-  }
-  return tramos.filter(t => t.km > 0.001);
-}
-
-function construirTramos(paradas: { nombre: string; coords: Coordenadas }[]) {
-  const base = { nombre: 'Bodega central', coords: BODEGA_CENTRAL };
-  return tramosEnL([base, ...paradas, base]);
-}
-
+const turno = computed(() => appStore.state.turnoActivo);
 const paradasTurno = computed(() => appStore.pedidosDespachoActivo.value.filter((p): p is Pedido & { coords: Coordenadas } => !!p.coords));
+const pendientes = computed(() => paradasTurno.value.filter(p => p.estado === 'en_despacho'));
 
-function crearFlota(): FurgonSim[] {
-  const v1 = appStore.state.vehiculos[0];
-  const v2 = appStore.state.vehiculos[1];
-  const tramos1 = construirTramos(paradasTurno.value.map(p => ({ nombre: p.clienteNombre, coords: p.coords })));
-  const tramos2 = construirTramos(RUTA_DEMO);
-  const sum = (t: Tramo[]) => t.reduce((acc, x) => acc + x.km, 0);
-  return [
-    {
-      id: v1.id, nombre: 'Furgón 1', patente: v1.patente, chofer: v1.choferAsignado, color: '#111111', demo: false,
-      tramos: tramos1, kmTotales: sum(tramos1), kmRecorridos: 0, velocidadKmh: 0, etaMin: null, estadoTexto: 'En bodega'
-    },
-    {
-      id: v2.id, nombre: 'Furgón 2', patente: v2.patente, chofer: v2.choferAsignado, color: '#ff262a', demo: true,
-      tramos: tramos2, kmTotales: sum(tramos2), kmRecorridos: sum(tramos2) * 0.35, velocidadKmh: 0, etaMin: null, estadoTexto: ''
-    }
-  ];
+const v1 = appStore.state.vehiculos[0];
+const v2 = appStore.state.vehiculos[1];
+const flota = reactive<FurgonVista[]>([
+  { id: v1.id, nombre: 'Furgón 1', patente: v1.patente, chofer: v1.choferAsignado, color: '#111111', demo: false,
+    fase: 'estacionado', estadoTexto: '', velocidadKmh: 0, etaMin: null, kmRestantes: null },
+  { id: v2.id, nombre: 'Furgón 2', patente: v2.patente, chofer: v2.choferAsignado, color: '#ff262a', demo: true,
+    fase: 'estacionado', estadoTexto: '', velocidadKmh: 0, etaMin: null, kmRestantes: null }
+]);
+
+const sims = new Map<string, Simulacion>([
+  [v1.id, { pos: BODEGA_CENTRAL, v: 0, objetivoId: null, mov: null, esperaParada: 0, demoIdx: 0 }],
+  [v2.id, { pos: RUTA_DEMO[0].coords, v: 0, objetivoId: null, mov: null, esperaParada: 0, demoIdx: 1 }]
+]);
+
+// El furgón real va a la próxima parada pendiente; sin pendientes vuelve a bodega
+function objetivoReal(): Objetivo | { estacionado: string } {
+  if (turno.value.estado === 'preparacion' && paradasTurno.value.length) {
+    return { estacionado: `Cargando ${turno.value.botellonesCargados} bidones · esperando que el chofer inicie la ruta` };
+  }
+  if (turno.value.estado !== 'en_ruta' || !paradasTurno.value.length) {
+    return { estacionado: 'Sin ruta activa' };
+  }
+  const p = pendientes.value[0];
+  return p ? { id: p.id, nombre: p.clienteNombre, coords: p.coords, esBodega: false } : BODEGA;
 }
-
-const flota = reactive<FurgonSim[]>([]);
 
 function htmlFurgon(color: string) {
   return `<span class="truck-pulse" style="background:${color}"></span>
+    <span class="truck-heading" style="border-bottom-color:${color}"></span>
     <span class="truck-pin" style="background:${color}">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/>
@@ -166,31 +195,6 @@ function htmlFurgon(color: string) {
     </span>`;
 }
 
-// Km desde el inicio del tramo i hasta llegar a su parada (tramos contiguos con el mismo destino)
-function kmHastaDestino(tramos: Tramo[], i: number) {
-  let km = 0;
-  for (let j = i; j < tramos.length && tramos[j].destino === tramos[i].destino; j++) km += tramos[j].km;
-  return km;
-}
-
-function posicionEn(f: FurgonSim) {
-  let restante = f.kmRecorridos;
-  for (let i = 0; i < f.tramos.length; i++) {
-    const t = f.tramos[i];
-    if (restante <= t.km) {
-      const r = t.km ? restante / t.km : 0;
-      return {
-        lat: t.desde.lat + (t.hasta.lat - t.desde.lat) * r,
-        lng: t.desde.lng + (t.hasta.lng - t.desde.lng) * r,
-        idx: i,
-        kmAlDestino: kmHastaDestino(f.tramos, i) - restante
-      };
-    }
-    restante -= t.km;
-  }
-  return { ...BODEGA_CENTRAL, idx: f.tramos.length - 1, kmAlDestino: 0 };
-}
-
 function dibujarParadas() {
   const m = mapa;
   if (!m) return;
@@ -198,63 +202,178 @@ function dibujarParadas() {
   marcadoresParadas = [
     m.marcadorHtml(BODEGA_CENTRAL, { clase: 'base-marker', html: '<span>B</span>', titulo: 'Bodega central', tamano: 30, zIndex: 5 })
   ];
-
   paradasTurno.value.forEach((p, idx) => {
     const clase = p.estado === 'entregado' || p.estado === 'parcial' ? 'is-done' : p.estado === 'ausente' ? 'is-absent' : 'is-pending';
     marcadoresParadas.push(m.marcadorHtml(p.coords, {
       clase: `stop-marker ${clase}`, html: `<span>${idx + 1}</span>`, titulo: `${idx + 1}. ${p.clienteNombre} · ${p.direccion}`, tamano: 26, zIndex: 10
     }));
   });
-
-  RUTA_DEMO.forEach(d => {
+  RUTA_DEMO.filter(d => !d.esBodega).forEach(d => {
     marcadoresParadas.push(m.marcadorHtml(d.coords, { clase: 'demo-marker', html: '<span></span>', titulo: `Demo: ${d.nombre}`, tamano: 12, zIndex: 4 }));
   });
 }
 
-function dibujarRutas() {
+function asegurarMarcadores() {
   const m = mapa;
   if (!m) return;
   flota.forEach(f => {
-    rutasFurgon.get(f.id)?.quitar();
-    const puntos = f.tramos.length ? [f.tramos[0].desde, ...f.tramos.map(t => t.hasta)] : [];
-    rutasFurgon.set(f.id, m.linea(puntos, { color: f.color, grosor: 4, opacidad: 0.35, punteada: f.demo }));
     if (!marcadoresFurgon.has(f.id)) {
-      marcadoresFurgon.set(f.id, m.marcadorHtml(BODEGA_CENTRAL, {
+      marcadoresFurgon.set(f.id, m.marcadorHtml(sims.get(f.id)!.pos, {
         clase: 'truck-marker', html: htmlFurgon(f.color), titulo: `${f.nombre} · ${f.patente}`, tamano: 34, zIndex: 1000
       }));
     }
   });
 }
 
-function actualizarFurgon(f: FurgonSim, dtSeg: number) {
-  const marcador = marcadoresFurgon.get(f.id);
-  if (!f.tramos.length || f.kmTotales === 0) {
-    f.estadoTexto = 'Detenido en bodega central (sin paradas asignadas)';
-    f.velocidadKmh = 0;
-    f.etaMin = null;
-    marcador?.mover(BODEGA_CENTRAL);
+// Ruta planificada (tramos que faltan) en trazo tenue, por calles
+async function dibujarPlan() {
+  const m = mapa;
+  if (!m) return;
+  const token = ++tokenPlan;
+
+  const planes: { id: string; color: string; puntos: Coordenadas[] }[] = [];
+  const obj = objetivoReal();
+  if ('id' in obj) {
+    planes.push({ id: v1.id, color: '#111111', puntos: [obj.coords, ...pendientes.value.slice(1).map(p => p.coords), BODEGA_CENTRAL] });
+  }
+  planes.push({ id: v2.id, color: '#ff262a', puntos: [...RUTA_DEMO.map(d => d.coords), RUTA_DEMO[0].coords] });
+
+  const resultados = await Promise.all(planes.map(async plan => {
+    const tramos: Trazado[] = [];
+    for (let i = 0; i < plan.puntos.length - 1; i++) {
+      if (plan.puntos[i] === plan.puntos[i + 1]) continue;
+      tramos.push(await trazarRuta(plan.puntos[i], plan.puntos[i + 1]));
+    }
+    return { ...plan, tramos };
+  }));
+  if (token !== tokenPlan || mapa !== m) return;
+
+  lineasPlan.forEach(ls => ls.forEach(l => l.quitar()));
+  lineasPlan.clear();
+  resultados.forEach(r => {
+    lineasPlan.set(r.id, r.tramos.map(t => m.linea(t.puntos, { color: r.color, grosor: 4, opacidad: 0.22, punteada: true })));
+    if (r.tramos.some(t => !t.real)) rutasReales.value = false;
+  });
+}
+
+function dibujarTramo(id: string, color: string, t: Trazado | null) {
+  lineasTramo.get(id)?.quitar();
+  lineasTramo.delete(id);
+  if (t && mapa) lineasTramo.set(id, mapa.linea(t.puntos, { color, grosor: 5, opacidad: 0.8 }));
+}
+
+function moverMarcador(id: string, pos: Coordenadas, rumbo?: number) {
+  const mk = marcadoresFurgon.get(id);
+  if (!mk) return;
+  mk.mover(pos);
+  if (rumbo !== undefined) {
+    const flecha = mk.elemento()?.querySelector<HTMLElement>('.truck-heading');
+    if (flecha) flecha.style.transform = `rotate(${rumbo}deg)`;
+  }
+}
+
+function paso(f: FurgonVista, sim: Simulacion, dt: number) {
+  // 1. ¿A dónde debe ir?
+  const obj: Objetivo | { estacionado: string } = f.demo ? RUTA_DEMO[sim.demoIdx % RUTA_DEMO.length] : objetivoReal();
+
+  if ('estacionado' in obj) {
+    if (sim.objetivoId !== null) {
+      sim.objetivoId = null;
+      sim.mov = null;
+      dibujarTramo(f.id, f.color, null);
+    }
+    sim.pos = BODEGA_CENTRAL;
+    sim.v = 0;
+    moverMarcador(f.id, sim.pos);
+    Object.assign(f, { fase: 'estacionado', estadoTexto: obj.estacionado, velocidadKmh: 0, etaMin: null, kmRestantes: null });
     return;
   }
 
-  // Velocidad simulada con leve variación (tráfico)
-  const base = 32 + Math.sin(performance.now() / 2300 + (f.demo ? 1.7 : 0)) * 9;
-  f.velocidadKmh = Math.round(base);
-  // Escala de demostración: 1 s real ≈ 30 s de manejo a velocidad x1
-  const kmAvance = (base / 120) * dtSeg * velocidad.value;
-  f.kmRecorridos = (f.kmRecorridos + kmAvance) % f.kmTotales;
+  // 2. Si cambió el destino (ej: el chofer confirmó una entrega), se calcula la ruta desde donde está
+  if (sim.objetivoId !== obj.id) {
+    sim.objetivoId = obj.id;
+    sim.mov = null;
+    sim.esperaParada = 0;
+    const destino = obj;
+    trazarRuta(sim.pos, destino.coords).then(t => {
+      if (sim.objetivoId !== destino.id || desmontado) return;
+      sim.mov = { trazado: t, m: 0, semaforoIdx: 0, espera: 0 };
+      if (!t.real) rutasReales.value = false;
+      dibujarTramo(f.id, f.color, t);
+    });
+  }
 
-  const pos = posicionEn(f);
-  marcador?.mover({ lat: pos.lat, lng: pos.lng });
-  const destino = f.tramos[pos.idx]?.destino ?? 'Bodega central';
-  f.estadoTexto = destino === 'Bodega central' ? 'Volviendo a bodega central' : `En ruta hacia ${destino}`;
-  f.etaMin = Math.max(1, Math.round((pos.kmAlDestino / base) * 60));
+  if (!sim.mov) {
+    Object.assign(f, { fase: 'calculando', estadoTexto: `Calculando ruta hacia ${obj.nombre}`, velocidadKmh: 0 });
+    return;
+  }
+
+  const mov = sim.mov;
+  const t = mov.trazado;
+
+  // 3. Llegada
+  if (mov.m >= t.totalM - 0.5) {
+    sim.v = 0;
+    Object.assign(f, { velocidadKmh: 0, etaMin: 0, kmRestantes: 0 });
+    if (f.demo) {
+      sim.esperaParada += dt;
+      Object.assign(f, { fase: obj.esBodega ? 'estacionado' : 'en_parada', estadoTexto: obj.esBodega ? 'Recargando en bodega' : `Entregando en ${obj.nombre}` });
+      if (sim.esperaParada >= (obj.esBodega ? ESPERA_BODEGA_DEMO : ESPERA_PARADA_DEMO)) sim.demoIdx++;
+    } else if (obj.esBodega) {
+      Object.assign(f, { fase: 'estacionado', estadoTexto: 'Llegó a bodega · el chofer debe cerrar la ruta' });
+    } else {
+      Object.assign(f, { fase: 'en_parada', estadoTexto: `En ${obj.nombre} · esperando que el chofer confirme la entrega` });
+    }
+    return;
+  }
+
+  // 4. Semáforo en rojo
+  if (mov.espera > 0) {
+    mov.espera -= dt;
+    sim.v = 0;
+    if (mov.espera <= 0) mov.semaforoIdx++;
+    Object.assign(f, { fase: 'semaforo', estadoTexto: `Detenido en semáforo · hacia ${obj.nombre}`, velocidadKmh: 0 });
+    return;
+  }
+
+  // 5. Manejo: acelera hasta crucero y frena antes del próximo semáforo o del destino
+  const sem = t.semaforos[mov.semaforoIdx];
+  const detenerEn = sem ? sem.m : t.totalM;
+  const distancia = Math.max(0, detenerEn - mov.m);
+  const crucero = 10 + Math.sin(performance.now() / 3100 + (f.demo ? 1.3 : 0)) * 1.8;
+  const limiteFreno = Math.sqrt(2 * FRENADO * distancia);
+  sim.v = Math.max(Math.min(sim.v + ACELERACION * dt, crucero, limiteFreno), distancia > 2 ? 0.4 : 0.05);
+  mov.m = Math.min(mov.m + sim.v * dt, detenerEn);
+  if (sem && mov.m >= sem.m - 0.5) {
+    mov.espera = sem.esperaSeg;
+    sim.v = 0;
+  }
+
+  const { pos, rumbo } = puntoEnTrazado(t, mov.m);
+  sim.pos = pos;
+  moverMarcador(f.id, pos, rumbo);
+
+  const restante = t.totalM - mov.m;
+  const esperaSemaforos = t.semaforos.slice(mov.semaforoIdx).reduce((acc, s) => acc + s.esperaSeg, 0);
+  Object.assign(f, {
+    fase: 'manejando',
+    estadoTexto: obj.esBodega ? 'Volviendo a bodega central' : `Hacia ${obj.nombre}`,
+    velocidadKmh: Math.round(sim.v * 3.6),
+    kmRestantes: restante / 1000,
+    etaMin: Math.max(1, Math.round((restante / 8.5 + esperaSemaforos) / 60))
+  });
 }
 
 function bucle(ts: number) {
   // Tope de 0,5 s para no saltar al volver de una pestaña en segundo plano
-  const dt = ultimoTs ? Math.min(0.5, (ts - ultimoTs) / 1000) : 0;
+  const dtReal = ultimoTs ? Math.min(0.5, (ts - ultimoTs) / 1000) : 0;
   ultimoTs = ts;
-  if (!enPausa.value) flota.forEach(f => actualizarFurgon(f, dt));
+  if (!enPausa.value && mapa) {
+    const dt = dtReal * ESCALA_TIEMPO * velocidad.value;
+    // Pasos de máximo 1 s simulado para que el frenado sea estable a velocidad x10
+    const pasos = Math.max(1, Math.ceil(dt));
+    for (let i = 0; i < pasos; i++) flota.forEach(f => paso(f, sims.get(f.id)!, dt / pasos));
+  }
   frameId = requestAnimationFrame(bucle);
 }
 
@@ -264,26 +383,17 @@ function enfocar(id: string) {
   if (pos && mapa) mapa.centrar(pos, 15);
 }
 
-function reconstruir() {
-  const nueva = crearFlota();
-  nueva.forEach((n, i) => {
-    if (flota[i]) {
-      // Conserva el avance proporcional al recalcular la ruta
-      const prev = flota[i];
-      const ratio = prev.kmTotales ? prev.kmRecorridos / prev.kmTotales : 0;
-      Object.assign(prev, { ...n, kmRecorridos: n.kmTotales * ratio });
-    } else {
-      flota.push(n);
-    }
-  });
-  dibujarParadas();
-  dibujarRutas();
-}
-
 function encuadrarTodo() {
   if (!mapa) return;
   mapa.ajustarTamano();
-  mapa.encuadrar(flota.flatMap(f => f.tramos.map(t => t.hasta)));
+  mapa.encuadrar([BODEGA_CENTRAL, ...paradasTurno.value.map(p => p.coords), ...RUTA_DEMO.map(d => d.coords)]);
+}
+
+function dibujarTodo() {
+  dibujarParadas();
+  asegurarMarcadores();
+  flota.forEach(f => dibujarTramo(f.id, f.color, sims.get(f.id)!.mov?.trazado ?? null));
+  dibujarPlan();
 }
 
 // Si Google Maps falla (key inválida o sin conexión), se redibuja todo sobre OpenStreetMap
@@ -296,8 +406,9 @@ function usarRespaldo(respaldo: MapaAdapter, motivo: string) {
   proveedor.value = respaldo.proveedor;
   marcadoresParadas = [];
   marcadoresFurgon.clear();
-  rutasFurgon.clear();
-  reconstruir();
+  lineasTramo.clear();
+  lineasPlan.clear();
+  dibujarTodo();
   setTimeout(encuadrarTodo, 60);
   notificar(motivo, 'error', 7000);
 }
@@ -313,14 +424,17 @@ onMounted(async () => {
   if (!mapa) {
     mapa = creado;
     proveedor.value = creado.proveedor;
-    reconstruir();
+    dibujarTodo();
     setTimeout(encuadrarTodo, 60);
   }
   frameId = requestAnimationFrame(bucle);
 });
 
-// Si el chofer entrega o se asignan pedidos, se recalcula la ruta y el color de las paradas
-watch(() => paradasTurno.value.map(p => `${p.id}:${p.estado}`).join('|'), reconstruir);
+// Cambios del turno (entregas, asignaciones, inicio o cierre de ruta) actualizan paradas y ruta planificada
+watch(() => `${turno.value.estado}|${paradasTurno.value.map(p => `${p.id}:${p.estado}`).join('|')}`, () => {
+  dibujarParadas();
+  dibujarPlan();
+});
 
 onBeforeUnmount(() => {
   desmontado = true;
@@ -342,7 +456,7 @@ onBeforeUnmount(() => {
   position: relative;
   padding: 0;
   overflow: hidden;
-  height: calc(100vh - 180px);
+  height: calc(100vh - 250px);
   min-height: 460px;
 }
 
@@ -475,17 +589,41 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+.truck-status {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.phase {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--zun-blanco-sutil);
+  border: 1px solid var(--zun-border);
+  color: var(--zun-gris-dark);
+}
+
+.phase-manejando { background: var(--zun-verde); border-color: var(--zun-verde); color: #ffffff; }
+.phase-semaforo { background: var(--zun-rojo); border-color: var(--zun-rojo); color: #ffffff; }
+.phase-en_parada { background: #facc15; border-color: #eab308; color: #422006; }
+
 .status-line {
   font-size: 0.86rem;
   font-weight: 600;
   color: var(--zun-negro);
+  line-height: 1.4;
 }
 
 .truck-metrics {
   display: flex;
   gap: 14px;
   flex-wrap: wrap;
-  margin-top: 6px;
   font-family: var(--font-mono);
   font-size: 0.74rem;
   color: var(--zun-gris);
@@ -523,7 +661,7 @@ onBeforeUnmount(() => {
 .legend-dot.is-absent { border-color: var(--zun-rojo); }
 .legend-dot.is-base { background: var(--zun-negro); border-radius: 3px; }
 
-/* Marcadores de Leaflet (HTML inyectado fuera del scope del componente) */
+/* Marcadores del mapa (HTML inyectado fuera del scope del componente) */
 :deep(.truck-marker) {
   position: relative;
 }
@@ -537,6 +675,27 @@ onBeforeUnmount(() => {
   justify-content: center;
   border: 2px solid #ffffff;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+/* Flecha de rumbo que gira alrededor del furgón */
+:deep(.truck-heading) {
+  position: absolute;
+  inset: -9px;
+  transform-origin: 50% 50%;
+  transition: transform 0.25s linear;
+  pointer-events: none;
+}
+
+:deep(.truck-heading)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  margin-left: -6px;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 8px solid;
+  border-bottom-color: inherit;
 }
 
 :deep(.truck-pulse) {

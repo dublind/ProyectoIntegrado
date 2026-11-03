@@ -153,7 +153,10 @@ input:focus, select:focus, textarea:focus {
 .badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
+  white-space: nowrap;
+  vertical-align: middle;
   padding: 5px 12px;
   border-radius: var(--radius-pill);
   font-family: var(--font-mono);
@@ -185,6 +188,28 @@ input:focus, select:focus, textarea:focus {
   background: var(--zun-rojo-light);
   color: #991b1b;
   border: 1px solid rgba(255, 38, 42, 0.3);
+}
+
+/* Variantes sólidas para estados que requieren atención inmediata */
+.badge-alert {
+  background: #facc15;
+  color: #422006;
+  border: 1px solid #eab308;
+  font-weight: 700;
+}
+
+.badge-urgent {
+  background: var(--zun-rojo);
+  color: #ffffff;
+  border: 1px solid var(--zun-rojo);
+  font-weight: 700;
+}
+
+.badge-live {
+  background: var(--zun-verde);
+  color: #ffffff;
+  border: 1px solid var(--zun-verde);
+  font-weight: 700;
 }
 
 .badge-neutral {

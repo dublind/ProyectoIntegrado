@@ -1,3 +1,5 @@
+import { buscarComuna } from './comunas';
+
 // Validaciones del formulario de pedido (Bug 93: los errores se muestran junto a cada campo)
 
 export interface DatosPedidoForm {
@@ -48,7 +50,8 @@ export function validarCampoPedido(campo: keyof DatosPedidoForm, datos: DatosPed
     case 'direccion':
       return validarDireccion(datos.direccion);
     case 'comuna':
-      return !datos.comuna.trim() ? 'Ingresa la comuna de entrega.' : undefined;
+      if (!datos.comuna.trim()) return 'Selecciona la comuna de entrega.';
+      return buscarComuna(datos.comuna) ? undefined : 'Comuna fuera de la zona de cobertura.';
     case 'cantidadBidones': {
       const n = Number(datos.cantidadBidones);
       if (!Number.isInteger(n) || n < 1) return 'La cantidad debe ser al menos 1 bidón.';

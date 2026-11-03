@@ -41,7 +41,8 @@ export interface Pedido {
   cantidadBidones: number;
   tipoProducto: string;
   precioUnitario: number;
-  total: number;
+  recargoDelivery?: number; // según el tramo de la comuna (tope $5.000)
+  total: number; // bidones + recargo de delivery
   estado: EstadoPedido;
   medioPago: MedioPago;
   fechaCreacion: string; // "YYYY-MM-DD HH:mm"
@@ -118,4 +119,13 @@ export interface InventarioBodega {
   rotosBodega: number;
   noRetornaron30d: number;
   bajasDefinitivas60d: number;
+}
+
+// Registro de lo que pasa en la operación (visible en el panel y sincronizado entre pestañas)
+export interface Actividad {
+  id: string;
+  texto: string;
+  origen: 'panel' | 'chofer';
+  tipo: 'info' | 'exito' | 'alerta' | 'error';
+  fecha: string; // YYYY-MM-DD HH:mm
 }

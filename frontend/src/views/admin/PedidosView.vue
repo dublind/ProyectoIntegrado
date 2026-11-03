@@ -35,12 +35,12 @@
         </thead>
         <tbody>
           <tr v-for="p in pedidosFiltrados" :key="p.id" :class="{ 'row-warning': p.tieneAlertaDeuda }">
-            <td class="font-mono font-bold" data-label="Código">{{ p.codigo }}</td>
+            <td class="font-mono font-bold nowrap" data-label="Código">{{ p.codigo }}</td>
             <td data-label="Cliente">
               <div class="cell-stack">
                 <span class="font-bold">{{ p.clienteNombre }}</span>
                 <span class="text-sm text-muted">{{ p.telefono }}</span>
-                <span v-if="p.tieneAlertaDeuda" class="badge badge-warning">Debe {{ p.deudaEnvasesPendiente }}
+                <span v-if="p.tieneAlertaDeuda" class="badge badge-alert">Debe {{ p.deudaEnvasesPendiente }}
                   envase(s)</span>
               </div>
             </td>
@@ -140,7 +140,10 @@
             <span v-if="pedidoDetalle.envasesNoDevueltos"> · {{ pedidoDetalle.envasesNoDevueltos }} vacío(s) sin
               devolver</span>
           </div>
-          <div class="detail-row"><strong>Total:</strong> {{ formatCLP(pedidoDetalle.total) }}</div>
+          <div class="detail-row"><strong>Total:</strong> {{ formatCLP(pedidoDetalle.total) }}
+            <span v-if="pedidoDetalle.recargoDelivery" class="text-muted">(incluye delivery {{
+              formatCLP(pedidoDetalle.recargoDelivery) }})</span>
+          </div>
           <div class="detail-row"><strong>Estado:</strong> {{ formatEstado(pedidoDetalle.estado) }}</div>
           <div class="detail-row"><strong>Creado:</strong> {{ pedidoDetalle.fechaCreacion }}</div>
           <div class="detail-row" v-if="pedidoDetalle.pedidoOrigenCodigo">
@@ -165,7 +168,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { Eye, Plus, Search } from 'lucide-vue-next';
 import NuevoPedidoModal from '../../components/NuevoPedidoModal.vue';
 import { appStore } from '../../store/useAppStore';
@@ -177,6 +181,12 @@ const estadosFiltro = ['todos', 'pendiente_pago', 'pagado', 'en_despacho', 'entr
 
 const filtroBusqueda = ref('');
 const filtroEstado = ref('todos');
+
+// La barra de flujo puede abrir esta vista ya filtrada (ej: /pedidos?estado=pendiente_pago)
+const route = useRoute();
+watch(() => route.query.estado, estado => {
+  if (typeof estado === 'string' && estadosFiltro.includes(estado)) filtroEstado.value = estado;
+}, { immediate: true });
 const mostrarModalPedido = ref(false);
 const modalTransferenciaPedido = ref<Pedido | null>(null);
 const comprobanteNombre = ref('');
@@ -324,6 +334,10 @@ function asignarDespacho(p: Pedido) {
 
 .data-table tr.row-warning td {
   background-color: var(--zun-ambar-light);
+}
+
+.nowrap {
+  white-space: nowrap;
 }
 
 .action-buttons {
