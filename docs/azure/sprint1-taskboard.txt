@@ -1,0 +1,326 @@
+- banner:
+  - navigation:
+    - link "Skip to main content":
+      - /url: "#skip-to-main-content"
+    - link "Azure DevOps organization home page":
+      - /url: /ignaciosalinas
+      - generic: Azure DevOps
+    - navigation "Breadcrumb":
+      - generic "Breadcrumb Item":
+        - link "ignaciosalinas":
+          - /url: /ignaciosalinas/
+          - generic: ignaciosalinas
+        - generic: /
+        - link "Proyecto Integrado":
+          - /url: /ignaciosalinas/Proyecto%20Integrado
+          - generic: Proyecto Integrado
+        - generic: /
+        - link "Boards":
+          - /url: /ignaciosalinas/Proyecto%20Integrado/_workitems
+          - generic: Boards
+        - generic: /
+        - link "Sprints":
+          - /url: /ignaciosalinas/Proyecto%20Integrado/_sprints/directory
+          - generic: Sprints
+    - search "Project-wide search":
+      - button "Get search results":
+        - generic: 
+      - textbox "Search filter lists or suggestions appear below.":
+        - /placeholder: Search
+  - menubar:
+    - menuitem "My Work":
+      - button "My Work":
+        - generic: 
+    - menuitem "Marketplace":
+      - button "Marketplace":
+        - generic: 
+    - menuitem "Help":
+      - button "Help":
+        - generic: 
+    - menuitem "User settings":
+      - button "User settings":
+        - generic: 
+    - menuitem "Account manager for IGNACIO LORENZO SALINAS GALLEGOS":
+      - button "Account manager for IGNACIO LORENZO SALINAS GALLEGOS":
+        - generic: Account manager for IGNACIO LORENZO SALINAS GALLEGOS
+- navigation "Project Proyecto Integrado":
+  - img "Proyecto Integrado"
+  - generic: Proyecto Integrado
+  - button "Create":
+    - generic: 
+  - menubar:
+    - menuitem "Overview":
+      - generic: Overview
+    - menuitem "Boards" [expanded]:
+      - generic: Boards
+    - menu:
+      - menuitem "Work items":
+        - generic: 
+        - generic: Work items
+      - menuitem "Boards":
+        - generic: 󰆌
+        - generic: Boards
+      - menuitem "Backlogs":
+        - generic: 󰆗
+        - generic: Backlogs
+      - menuitem "Sprints":
+        - generic: 󰅠
+        - generic: Sprints
+      - menuitem "Queries":
+        - generic: 󰄬
+        - generic: Queries
+      - menuitem "Delivery Plans":
+        - generic: 
+        - generic: Delivery Plans
+      - menuitem "Analytics views":
+        - generic: 
+        - generic: Analytics views
+    - menuitem "Repos":
+      - generic: Repos
+    - menuitem "Pipelines":
+      - generic: Pipelines
+    - menuitem "Test Plans":
+      - generic: Test Plans
+    - menuitem "Artifacts":
+      - generic: Artifacts
+  - link "Project settings":
+    - /url: /ignaciosalinas/Proyecto%20Integrado/_settings/
+    - img "Project settings":
+      - generic: 
+    - generic: Project settings
+  - button "Show less information":
+    - generic: 
+- main:
+  - heading "Proyecto Integrado Team Add to favorites Show Team Profile" [level=1]:
+    - button "Proyecto Integrado Team":
+      - generic: 󰅠
+      - text: Proyecto Integrado Team
+      - generic: 
+    - button "Add to favorites":
+      - generic: 
+    - button "Show Team Profile":
+      - generic: 
+  - menubar:
+    - menuitem "New Work Item":
+      - generic: 
+      - generic: New Work Item
+      - generic: 
+    - menuitem "Column Options":
+      - generic: 
+      - generic: Column Options
+  - tablist:
+    - tab "Taskboard" [selected]:
+      - generic: Taskboard
+    - tab "Backlog":
+      - generic: Backlog
+    - tab "Capacity":
+      - generic: Capacity
+    - tab "Analytics":
+      - generic: Analytics
+  - menubar:
+    - menuitem "View options":
+      - generic: 
+    - menuitem "Collapse card fields":
+      - generic: 
+    - text: 󰅠
+    - menuitem "Filter":
+      - generic: 
+    - menuitem "Configure team settings":
+      - generic: 
+    - menuitem "More actions":
+      - generic: 
+  - toolbar:
+    - menubar:
+      - menuitem "Sprint 1":
+        - generic: Sprint 1
+        - generic: 
+      - 'menuitem "Person: @Me"':
+        - generic: "Person: @Me"
+        - generic: 
+    - menubar:
+      - menuitem "No iteration dates Set dates":
+        - button "No iteration dates":
+          - generic: No iteration dates
+        - button "Set dates":
+          - generic: Set dates
+    - menubar:
+      - menuitem "Chart not loaded warning.":
+        - generic: 
+  - grid:
+    - rowgroup:
+      - row "Collapse all To Do In Progress Done":
+        - columnheader "Collapse all":
+          - button "Collapse all":
+            - generic: 
+            - generic: Collapse all
+        - columnheader "To Do":
+          - generic: To Do
+        - columnheader "In Progress":
+          - generic: In Progress
+        - columnheader "Done":
+          - generic: Done
+        - columnheader
+    - rowgroup:
+      - row "Expand this row Product Backlog Item Definir roles, permisos y capacidad semanal del equipo":
+        - gridcell "Expand this row Product Backlog Item Definir roles, permisos y capacidad semanal del equipo":
+          - button "Expand this row":
+            - generic: 
+          - img "Product Backlog Item":
+            - generic: 
+          - generic: Definir roles, permisos y capacidad semanal del equipo
+      - row "Expand this row Product Backlog Item Priorizar historias y criterios de aceptación del MVP":
+        - gridcell "Expand this row Product Backlog Item Priorizar historias y criterios de aceptación del MVP":
+          - button "Expand this row":
+            - generic: 
+          - img "Product Backlog Item":
+            - generic: 
+          - generic: Priorizar historias y criterios de aceptación del MVP
+      - row "Collapse this row Product Backlog Item, Definir política de pagos y liberación a despacho New item":
+        - gridcell "Collapse this row Product Backlog Item, Definir política de pagos y liberación a despacho":
+          - button "Collapse this row":
+            - generic: 
+          - group "Product Backlog Item, Definir política de pagos y liberación a despacho":
+            - img "Product Backlog Item":
+              - generic: 
+            - text: "44"
+            - link "Definir política de pagos y liberación a despacho":
+              - /url: /ignaciosalinas/Proyecto%20Integrado/_workitems/edit/44
+            - button "Approved":
+              - generic: Approved
+            - button "Assigned To IGNACIO LORENZO SALINAS GALLEGOS":
+              - img "IGNACIO LORENZO SALINAS GALLEGOS"
+              - generic: IGNACIO LORENZO SALINAS GALLEGOS
+            - list:
+              - generic "Agua"
+              - generic "MVP"
+              - generic "S1"
+        - gridcell "New item":
+          - button "New item":
+            - generic: 
+        - gridcell
+        - gridcell
+        - gridcell
+      - row "Expand this row Product Backlog Item Diseñar interfaz de administración de pedidos":
+        - gridcell "Expand this row Product Backlog Item Diseñar interfaz de administración de pedidos":
+          - button "Expand this row":
+            - generic: 
+          - img "Product Backlog Item":
+            - generic: 
+          - generic: Diseñar interfaz de administración de pedidos
+      - row "Expand this row Product Backlog Item Diseñar interfaz móvil de reparto":
+        - gridcell "Expand this row Product Backlog Item Diseñar interfaz móvil de reparto":
+          - button "Expand this row":
+            - generic: 
+          - img "Product Backlog Item":
+            - generic: 
+          - generic: Diseñar interfaz móvil de reparto
+      - row "Expand this row Product Backlog Item Validar alcance y flujo operativo con el nuevo cliente":
+        - gridcell "Expand this row Product Backlog Item Validar alcance y flujo operativo con el nuevo cliente":
+          - button "Expand this row":
+            - generic: 
+          - img "Product Backlog Item":
+            - generic: 
+          - generic: Validar alcance y flujo operativo con el nuevo cliente
+      - row "Expand this row Product Backlog Item Definir reglas de botellones retornables y mermas":
+        - gridcell "Expand this row Product Backlog Item Definir reglas de botellones retornables y mermas":
+          - button "Expand this row":
+            - generic: 
+          - img "Product Backlog Item":
+            - generic: 
+          - generic: Definir reglas de botellones retornables y mermas
+      - row "Expand this row Product Backlog Item Definir arquitectura y contratos entre módulos ( APIs a trabajar con el frontend y BD)":
+        - gridcell "Expand this row Product Backlog Item Definir arquitectura y contratos entre módulos ( APIs a trabajar con el frontend y BD)":
+          - button "Expand this row":
+            - generic: 
+          - img "Product Backlog Item":
+            - generic: 
+          - generic: Definir arquitectura y contratos entre módulos ( APIs a trabajar con el frontend y BD)
+      - row "Expand this row Product Backlog Item Mapear experiencia de administrativo y chofer":
+        - gridcell "Expand this row Product Backlog Item Mapear experiencia de administrativo y chofer":
+          - button "Expand this row":
+            - generic: 
+          - img "Product Backlog Item":
+            - generic: 
+          - generic: Mapear experiencia de administrativo y chofer
+      - row "Expand this row Product Backlog Item mockups del proyecto relacionado con la vista del admin y choferes":
+        - gridcell "Expand this row Product Backlog Item mockups del proyecto relacionado con la vista del admin y choferes":
+          - button "Expand this row":
+            - generic: 
+          - img "Product Backlog Item":
+            - generic: 
+          - generic: mockups del proyecto relacionado con la vista del admin y choferes
+      - row "Expand this row Product Backlog Item Modelar clientes, direcciones y pedidos":
+        - gridcell "Expand this row Product Backlog Item Modelar clientes, direcciones y pedidos":
+          - button "Expand this row":
+            - generic: 
+          - img "Product Backlog Item":
+            - generic: 
+          - generic: Modelar clientes, direcciones y pedidos
+      - row "Expand this row Product Backlog Item Modelar pagos y conciliación manual":
+        - gridcell "Expand this row Product Backlog Item Modelar pagos y conciliación manual":
+          - button "Expand this row":
+            - generic: 
+          - img "Product Backlog Item":
+            - generic: 
+          - generic: Modelar pagos y conciliación manual
+      - row "Expand this row Product Backlog Item Modelar inventario mediante movimientos":
+        - gridcell "Expand this row Product Backlog Item Modelar inventario mediante movimientos":
+          - button "Expand this row":
+            - generic: 
+          - img "Product Backlog Item":
+            - generic: 
+          - generic: Modelar inventario mediante movimientos
+      - row "Expand this row Product Backlog Item Configurar repositorio, entornos y pipeline de pruebas":
+        - gridcell "Expand this row Product Backlog Item Configurar repositorio, entornos y pipeline de pruebas":
+          - button "Expand this row":
+            - generic: 
+          - img "Product Backlog Item":
+            - generic: 
+          - generic: Configurar repositorio, entornos y pipeline de pruebas
+      - row "Collapse this row Product Backlog Item, Implementar autenticación y permisos por perfil Task, Implementar permisos diferenciados de administrador, administrativo y chofer New item":
+        - gridcell "Collapse this row Product Backlog Item, Implementar autenticación y permisos por perfil":
+          - button "Collapse this row":
+            - generic: 
+          - group "Product Backlog Item, Implementar autenticación y permisos por perfil":
+            - img "Product Backlog Item":
+              - generic: 
+            - text: "55"
+            - link "Implementar autenticación y permisos por perfil":
+              - /url: /ignaciosalinas/Proyecto%20Integrado/_workitems/edit/55
+            - button "Committed":
+              - generic: Committed
+            - button "Assigned To AGUSTIN IGNACIO BRICENO SEPULVEDA":
+              - img "AGUSTIN IGNACIO BRICENO SEPULVEDA"
+              - generic: AGUSTIN IGNACIO BRICENO SEPULVEDA
+            - list:
+              - generic "Agua"
+              - generic "MVP"
+              - generic "S1"
+        - gridcell "Task, Implementar permisos diferenciados de administrador, administrativo y chofer New item":
+          - group "Task, Implementar permisos diferenciados de administrador, administrativo y chofer":
+            - img "Task":
+              - generic: 
+            - text: "88"
+            - link "Implementar permisos diferenciados de administrador, administrativo y chofer":
+              - /url: /ignaciosalinas/Proyecto%20Integrado/_workitems/edit/88
+            - button "To Do":
+              - generic: To Do
+            - button "Assigned To IGNACIO LORENZO SALINAS GALLEGOS":
+              - img "IGNACIO LORENZO SALINAS GALLEGOS"
+              - generic: IGNACIO LORENZO SALINAS GALLEGOS
+            - generic: Remaining Work
+            - button "Remaining Work"
+          - button "New item":
+            - generic: 
+        - gridcell
+        - gridcell
+        - gridcell
+      - row "Expand this row Product Backlog Item Implementar API de clientes y direcciones":
+        - gridcell "Expand this row Product Backlog Item Implementar API de clientes y direcciones":
+          - button "Expand this row":
+            - generic: 
+          - img "Product Backlog Item":
+            - generic: 
+          - generic: Implementar API de clientes y direcciones
+- paragraph: Exited full-screen mode
+- paragraph: Exited full-screen mode
