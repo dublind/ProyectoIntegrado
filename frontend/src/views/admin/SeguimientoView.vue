@@ -2,7 +2,10 @@
   <div class="tracking-layout">
     <div class="map-wrap card">
       <div ref="mapEl" class="map" role="application" aria-label="Mapa de seguimiento de furgones"></div>
-      <div class="sim-chip"><span class="sim-dot"></span> Simulación · posiciones no reales</div>
+      <div class="sim-chip">
+        <span class="sim-dot"></span> Simulación · posiciones no reales
+        <span v-if="proveedor" class="sim-provider">{{ proveedor === 'google' ? 'Google Maps' : 'OpenStreetMap' }}</span>
+      </div>
     </div>
 
     <aside class="tracking-panel">
@@ -18,8 +21,8 @@
           </div>
         </div>
         <p class="text-xs text-muted">
-          Recorrido simulado sobre las paradas reales del turno en orden geográfico. Al integrar Google Maps Platform se
-          reemplaza por la ubicación GPS del celular del chofer.
+          Recorrido simulado sobre las paradas reales del turno en orden geográfico. Más adelante se reemplaza por la
+          ubicación GPS del celular del chofer.
         </p>
       </section>
 
@@ -54,12 +57,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, markRaw, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { Clock, Gauge, Pause, Play, Route, Truck } from 'lucide-vue-next';
 import { appStore } from '../../store/useAppStore';
+import { notificar } from '../../store/useToast';
 import { BODEGA_CENTRAL, distanciaKm } from '../../utils/geo';
+import { crearMapa } from '../../utils/mapa';
+import type { LineaMapa, MapaAdapter, MarcadorMapa, ProveedorMapa } from '../../utils/mapa';
 import type { Coordenadas, Pedido } from '../../types';
 
 interface Tramo {
@@ -82,19 +86,22 @@ interface FurgonSim {
   velocidadKmh: number;
   etaMin: number | null;
   estadoTexto: string;
-  marker?: L.Marker;
-  ruta?: L.Polyline;
 }
 
 const mapEl = ref<HTMLElement | null>(null);
 const enPausa = ref(false);
 const velocidad = ref(1);
 const seleccionado = ref<string | null>(null);
+const proveedor = ref<ProveedorMapa | null>(null);
 
-let mapa: L.Map | null = null;
-let capaParadas: L.LayerGroup | null = null;
+// Objetos del mapa fuera del estado reactivo (Leaflet/Google no deben envolverse en proxies)
+let mapa: MapaAdapter | null = null;
+let marcadoresParadas: MarcadorMapa[] = [];
+const marcadoresFurgon = new Map<string, MarcadorMapa>();
+const rutasFurgon = new Map<string, LineaMapa>();
 let frameId = 0;
 let ultimoTs = 0;
+let desmontado = false;
 
 // Ruta de demostración del furgón 2 (oriente de Santiago)
 const RUTA_DEMO: { nombre: string; coords: Coordenadas }[] = [
@@ -146,22 +153,17 @@ function crearFlota(): FurgonSim[] {
   ];
 }
 
-const flota = reactive([]) as FurgonSim[];
+const flota = reactive<FurgonSim[]>([]);
 
-function iconoFurgon(color: string) {
-  return L.divIcon({
-    className: 'truck-marker',
-    html: `<span class="truck-pulse" style="background:${color}"></span>
-      <span class="truck-pin" style="background:${color}">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/>
-          <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/>
-          <circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>
-        </svg>
-      </span>`,
-    iconSize: [34, 34],
-    iconAnchor: [17, 17]
-  });
+function htmlFurgon(color: string) {
+  return `<span class="truck-pulse" style="background:${color}"></span>
+    <span class="truck-pin" style="background:${color}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/>
+        <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/>
+        <circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>
+      </svg>
+    </span>`;
 }
 
 // Km desde el inicio del tramo i hasta llegar a su parada (tramos contiguos con el mismo destino)
@@ -190,50 +192,47 @@ function posicionEn(f: FurgonSim) {
 }
 
 function dibujarParadas() {
-  if (!mapa) return;
-  capaParadas?.remove();
-  capaParadas = L.layerGroup().addTo(mapa);
-
-  L.marker([BODEGA_CENTRAL.lat, BODEGA_CENTRAL.lng], {
-    icon: L.divIcon({ className: 'base-marker', html: '<span>B</span>', iconSize: [30, 30], iconAnchor: [15, 15] })
-  }).bindTooltip('Bodega central').addTo(capaParadas);
+  const m = mapa;
+  if (!m) return;
+  marcadoresParadas.forEach(x => x.quitar());
+  marcadoresParadas = [
+    m.marcadorHtml(BODEGA_CENTRAL, { clase: 'base-marker', html: '<span>B</span>', titulo: 'Bodega central', tamano: 30, zIndex: 5 })
+  ];
 
   paradasTurno.value.forEach((p, idx) => {
     const clase = p.estado === 'entregado' || p.estado === 'parcial' ? 'is-done' : p.estado === 'ausente' ? 'is-absent' : 'is-pending';
-    L.marker([p.coords.lat, p.coords.lng], {
-      icon: L.divIcon({ className: `stop-marker ${clase}`, html: `<span>${idx + 1}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] })
-    }).bindTooltip(`${idx + 1}. ${p.clienteNombre}<br>${p.direccion}`).addTo(capaParadas!);
+    marcadoresParadas.push(m.marcadorHtml(p.coords, {
+      clase: `stop-marker ${clase}`, html: `<span>${idx + 1}</span>`, titulo: `${idx + 1}. ${p.clienteNombre} · ${p.direccion}`, tamano: 26, zIndex: 10
+    }));
   });
 
   RUTA_DEMO.forEach(d => {
-    L.circleMarker([d.coords.lat, d.coords.lng], { radius: 5, color: '#ff262a', weight: 2, fillColor: '#ffffff', fillOpacity: 1 })
-      .bindTooltip(`Demo: ${d.nombre}`).addTo(capaParadas!);
+    marcadoresParadas.push(m.marcadorHtml(d.coords, { clase: 'demo-marker', html: '<span></span>', titulo: `Demo: ${d.nombre}`, tamano: 12, zIndex: 4 }));
   });
 }
 
 function dibujarRutas() {
-  if (!mapa) return;
+  const m = mapa;
+  if (!m) return;
   flota.forEach(f => {
-    f.ruta?.remove();
-    const puntos: L.LatLngExpression[] = f.tramos.length
-      ? [[f.tramos[0].desde.lat, f.tramos[0].desde.lng], ...f.tramos.map(t => [t.hasta.lat, t.hasta.lng] as L.LatLngTuple)]
-      : [];
-    // markRaw: los objetos de Leaflet no deben quedar envueltos en proxies reactivos
-    f.ruta = markRaw(L.polyline(puntos, { color: f.color, weight: 4, opacity: 0.35, dashArray: f.demo ? '6 8' : undefined }).addTo(mapa!));
-    if (!f.marker) {
-      f.marker = markRaw(L.marker([BODEGA_CENTRAL.lat, BODEGA_CENTRAL.lng], { icon: iconoFurgon(f.color), zIndexOffset: 1000 })
-        .bindTooltip(`${f.nombre} · ${f.patente}`)
-        .addTo(mapa!));
+    rutasFurgon.get(f.id)?.quitar();
+    const puntos = f.tramos.length ? [f.tramos[0].desde, ...f.tramos.map(t => t.hasta)] : [];
+    rutasFurgon.set(f.id, m.linea(puntos, { color: f.color, grosor: 4, opacidad: 0.35, punteada: f.demo }));
+    if (!marcadoresFurgon.has(f.id)) {
+      marcadoresFurgon.set(f.id, m.marcadorHtml(BODEGA_CENTRAL, {
+        clase: 'truck-marker', html: htmlFurgon(f.color), titulo: `${f.nombre} · ${f.patente}`, tamano: 34, zIndex: 1000
+      }));
     }
   });
 }
 
 function actualizarFurgon(f: FurgonSim, dtSeg: number) {
+  const marcador = marcadoresFurgon.get(f.id);
   if (!f.tramos.length || f.kmTotales === 0) {
     f.estadoTexto = 'Detenido en bodega central (sin paradas asignadas)';
     f.velocidadKmh = 0;
     f.etaMin = null;
-    f.marker?.setLatLng([BODEGA_CENTRAL.lat, BODEGA_CENTRAL.lng]);
+    marcador?.mover(BODEGA_CENTRAL);
     return;
   }
 
@@ -245,7 +244,7 @@ function actualizarFurgon(f: FurgonSim, dtSeg: number) {
   f.kmRecorridos = (f.kmRecorridos + kmAvance) % f.kmTotales;
 
   const pos = posicionEn(f);
-  f.marker?.setLatLng([pos.lat, pos.lng]);
+  marcador?.mover({ lat: pos.lat, lng: pos.lng });
   const destino = f.tramos[pos.idx]?.destino ?? 'Bodega central';
   f.estadoTexto = destino === 'Bodega central' ? 'Volviendo a bodega central' : `En ruta hacia ${destino}`;
   f.etaMin = Math.max(1, Math.round((pos.kmAlDestino / base) * 60));
@@ -261,19 +260,18 @@ function bucle(ts: number) {
 
 function enfocar(id: string) {
   seleccionado.value = id;
-  const f = flota.find(x => x.id === id);
-  const pos = f?.marker?.getLatLng();
-  if (pos && mapa) mapa.flyTo(pos, 15, { duration: 0.8 });
+  const pos = marcadoresFurgon.get(id)?.posicion();
+  if (pos && mapa) mapa.centrar(pos, 15);
 }
 
 function reconstruir() {
   const nueva = crearFlota();
   nueva.forEach((n, i) => {
     if (flota[i]) {
-      // Conserva marcador y avance proporcional al recalcular la ruta
+      // Conserva el avance proporcional al recalcular la ruta
       const prev = flota[i];
       const ratio = prev.kmTotales ? prev.kmRecorridos / prev.kmTotales : 0;
-      Object.assign(prev, { ...n, kmRecorridos: n.kmTotales * ratio, marker: prev.marker, ruta: prev.ruta });
+      Object.assign(prev, { ...n, kmRecorridos: n.kmTotales * ratio });
     } else {
       flota.push(n);
     }
@@ -282,25 +280,42 @@ function reconstruir() {
   dibujarRutas();
 }
 
-onMounted(() => {
-  if (!mapEl.value) return;
-  mapa = L.map(mapEl.value, { zoomControl: true, attributionControl: true }).setView([BODEGA_CENTRAL.lat, BODEGA_CENTRAL.lng], 13);
-  // Teselas de OpenStreetMap (sin API key); se reemplazan por Google Maps al integrar la plataforma
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    maxZoom: 19
-  }).addTo(mapa);
+function encuadrarTodo() {
+  if (!mapa) return;
+  mapa.ajustarTamano();
+  mapa.encuadrar(flota.flatMap(f => f.tramos.map(t => t.hasta)));
+}
 
+// Si Google Maps falla (key inválida o sin conexión), se redibuja todo sobre OpenStreetMap
+function usarRespaldo(respaldo: MapaAdapter, motivo: string) {
+  if (desmontado) {
+    respaldo.destruir();
+    return;
+  }
+  mapa = respaldo;
+  proveedor.value = respaldo.proveedor;
+  marcadoresParadas = [];
+  marcadoresFurgon.clear();
+  rutasFurgon.clear();
   reconstruir();
+  setTimeout(encuadrarTodo, 60);
+  notificar(motivo, 'error', 7000);
+}
 
-  // Espera a que el contenedor tenga su tamaño final antes de encuadrar todas las rutas
-  setTimeout(() => {
-    if (!mapa) return;
-    mapa.invalidateSize();
-    const todos = flota.flatMap(f => f.tramos.map(t => [t.hasta.lat, t.hasta.lng] as L.LatLngTuple));
-    if (todos.length) mapa.fitBounds(L.latLngBounds(todos).pad(0.1));
-  }, 60);
-
+onMounted(async () => {
+  if (!mapEl.value) return;
+  const creado = await crearMapa(mapEl.value, BODEGA_CENTRAL, usarRespaldo);
+  if (desmontado) {
+    creado.destruir();
+    return;
+  }
+  // Si la carga de Google falló, usarRespaldo ya instaló el mapa OSM
+  if (!mapa) {
+    mapa = creado;
+    proveedor.value = creado.proveedor;
+    reconstruir();
+    setTimeout(encuadrarTodo, 60);
+  }
   frameId = requestAnimationFrame(bucle);
 });
 
@@ -308,8 +323,9 @@ onMounted(() => {
 watch(() => paradasTurno.value.map(p => `${p.id}:${p.estado}`).join('|'), reconstruir);
 
 onBeforeUnmount(() => {
+  desmontado = true;
   cancelAnimationFrame(frameId);
-  mapa?.remove();
+  mapa?.destruir();
   mapa = null;
 });
 </script>
@@ -335,8 +351,8 @@ onBeforeUnmount(() => {
   height: 100%;
 }
 
-/* Mapa en tonos apagados para que destaquen rutas y furgones (estilo editorial) */
-.map :deep(.leaflet-tile-pane) {
+/* Mapa OSM en tonos apagados para que destaquen rutas y furgones (estilo editorial) */
+.map.mapa-osm :deep(.leaflet-tile-pane) {
   filter: grayscale(0.85) contrast(0.95) brightness(1.04);
 }
 
@@ -354,6 +370,12 @@ onBeforeUnmount(() => {
   font-size: 0.72rem;
   padding: 6px 12px;
   border-radius: var(--radius-pill);
+}
+
+.sim-provider {
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+  opacity: 0.75;
 }
 
 .sim-dot {
@@ -556,6 +578,15 @@ onBeforeUnmount(() => {
 :deep(.stop-marker.is-absent span) {
   border-color: #ff262a;
   color: #ff262a;
+}
+
+:deep(.demo-marker span) {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid #ff262a;
 }
 
 :deep(.base-marker span) {
