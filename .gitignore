@@ -21,7 +21,7 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Editores y SO
-.vscode/
+/.vscode/*
 .idea/
 .DS_Store
 Thumbs.db
@@ -29,3 +29,8 @@ Thumbs.db
 # Temporales de pruebas
 coverage/
 .nyc_output/
+
+# Datos y credenciales de la instancia local
+.local/
+credenciales-locales.txt
+!/.vscode/tasks.json

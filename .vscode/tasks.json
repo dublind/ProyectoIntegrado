@@ -1,0 +1,7 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "Iniciar proyecto integrado", "type": "shell", "command": "npm run dev", "isBackground": true, "problemMatcher": [] },
+    { "label": "Verificar Sprint 1", "type": "shell", "command": "npm run check", "group": { "kind": "test", "isDefault": true }, "problemMatcher": [] }
+  ]
+}
