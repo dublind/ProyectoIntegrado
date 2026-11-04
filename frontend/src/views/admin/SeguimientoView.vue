@@ -2,8 +2,8 @@
   <div class="tracking-layout">
     <div class="map-wrap card">
       <div ref="mapEl" class="map" role="application" aria-label="Mapa de seguimiento de furgones"></div>
-      <div class="sim-chip">
-        <span class="sim-dot"></span> Simulación · posiciones no reales
+      <div :class="['sim-chip', { live: hayGpsVivo }]">
+        <span class="sim-dot"></span> {{ hayGpsVivo ? 'GPS del chofer en vivo · resto simulado' : 'Simulación · posiciones no reales' }}
         <span v-if="proveedor" class="sim-provider">{{ proveedor === 'google' ? 'Google Maps' : 'OpenStreetMap' }}</span>
       </div>
     </div>
@@ -39,16 +39,28 @@
         <div class="truck-status">
           <span :class="['phase', `phase-${f.fase}`]">{{ etiquetaFase[f.fase] }}</span>
           <span class="status-line">{{ f.estadoTexto }}</span>
+          <span v-if="f.destino" class="target-line"><MapPin :size="13" /> {{ f.destino }}</span>
           <div v-if="f.fase !== 'estacionado'" class="truck-metrics">
-            <span><Gauge :size="13" /> {{ f.velocidadKmh }} km/h</span>
+            <span :class="['gps-tag', `gps-${f.gps}`]"><SatelliteDish :size="13" /> {{ etiquetaGps[f.gps] }}</span>
+            <span v-if="f.velocidadKmh !== null"><Gauge :size="13" /> {{ f.velocidadKmh }} km/h</span>
             <span v-if="f.etaMin !== null"><Clock :size="13" /> {{ f.etaMin }} min</span>
             <span v-if="f.kmRestantes !== null"><Route :size="13" /> {{ f.kmRestantes.toFixed(1) }} km</span>
+          </div>
+          <!-- Respaldo sin GPS: el chofer pide que la oficina valide su llegada -->
+          <div v-for="s in solicitudesDe(f.id)" :key="s.id" class="arrival-request" @click.stop>
+            <span><strong>{{ s.clienteNombre }}</strong>: el chofer pide validar su llegada ({{ s.llegadaManual?.motivo }}).
+              Confírmalo por teléfono antes de autorizar.</span>
+            <div class="arrival-request-actions">
+              <button class="btn btn-primary btn-sm" @click="autorizarLlegada(s)">Autorizar llegada</button>
+              <button class="btn btn-secondary btn-sm" @click="rechazarLlegada(s)">Rechazar</button>
+            </div>
           </div>
         </div>
       </section>
 
       <section class="card legend-card">
         <span class="legend-item"><span class="legend-dot is-pending"></span> Parada por entregar</span>
+        <span class="legend-item"><span class="legend-dot is-target"></span> En camino a esta parada</span>
         <span class="legend-item"><span class="legend-dot is-done"></span> Entregada</span>
         <span class="legend-item"><span class="legend-dot is-absent"></span> Cliente ausente</span>
         <span class="legend-item"><span class="legend-dot is-base"></span> Bodega central</span>
@@ -58,8 +70,8 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { Clock, Gauge, Pause, Play, Route, Truck } from 'lucide-vue-next';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { Clock, Gauge, MapPin, Pause, Play, Route, SatelliteDish, Truck } from 'lucide-vue-next';
 import { appStore } from '../../store/useAppStore';
 import { notificar } from '../../store/useToast';
 import { BODEGA_CENTRAL } from '../../utils/geo';
@@ -69,6 +81,7 @@ import { hoyISO } from '../../utils/formato';
 import { puntoEnTrazado, trazarRuta } from '../../utils/rutas';
 import type { Trazado } from '../../utils/rutas';
 import type { Coordenadas, Pedido } from '../../types';
+import { distanciaM, formatoDistancia, ubicacionVigente } from '../../utils/llegada';
 
 type Fase = 'estacionado' | 'calculando' | 'manejando' | 'semaforo' | 'en_parada';
 
@@ -82,7 +95,9 @@ interface FurgonVista {
   demo: boolean;
   fase: Fase;
   estadoTexto: string;
-  velocidadKmh: number;
+  destino: string | null; // parada a la que va en camino (orden, cliente y dirección)
+  gps: 'vivo' | 'simulado_chofer' | 'simulacion'; // de dónde sale la posición del marcador
+  velocidadKmh: number | null;
   etaMin: number | null;
   kmRestantes: number | null;
 }
@@ -115,6 +130,12 @@ const etiquetaFase: Record<Fase, string> = {
   manejando: 'En movimiento',
   semaforo: 'Detenido en semáforo',
   en_parada: 'En la parada'
+};
+
+const etiquetaGps: Record<FurgonVista['gps'], string> = {
+  vivo: 'GPS en vivo',
+  simulado_chofer: 'GPS simulado (demo)',
+  simulacion: 'Posición simulada'
 };
 
 const mapEl = ref<HTMLElement | null>(null);
@@ -155,8 +176,87 @@ const pendientesDe = (vehiculoId: string) => paradasDe(vehiculoId).filter(x => x
 
 const flota = reactive<FurgonVista[]>(appStore.state.vehiculos.filter(v => v.activo).map((v, i) => ({
   id: v.id, nombre: `Furgón ${i + 1}`, patente: v.patente, chofer: v.choferAsignado, color: COLORES[i % COLORES.length],
-  demo: false, fase: 'estacionado', estadoTexto: '', velocidadKmh: 0, etaMin: null, kmRestantes: null
+  demo: false, fase: 'estacionado', estadoTexto: '', destino: null, gps: 'simulacion', velocidadKmh: 0, etaMin: null, kmRestantes: null
 })));
+
+// Furgones con posición GPS reciente informada por la app del chofer
+const hayGpsVivo = computed(() => flota.some(f => f.gps !== 'simulacion' && f.fase !== 'estacionado'));
+
+// Paradas en las que el chofer pidió validar la llegada sin GPS
+const solicitudesDe = (vehiculoId: string) => pendientesDe(vehiculoId).filter(p => p.llegadaManual?.estado === 'solicitada');
+
+function autorizarLlegada(p: Pedido) {
+  appStore.autorizarLlegadaManual(p.id);
+  notificar(`Llegada a ${p.clienteNombre} validada: el chofer ya puede confirmar la entrega.`, 'exito', 3500);
+}
+
+function rechazarLlegada(p: Pedido) {
+  appStore.rechazarLlegadaManual(p.id);
+  notificar(`Se rechazó validar la llegada a ${p.clienteNombre}.`, 'info', 3000);
+}
+
+// Último punto desde el que se trazó la ruta GPS → parada (para no recalcularla en cada lectura)
+const trazadoGps = new Map<string, { desde: Coordenadas; objetivoId: string }>();
+
+function rumboEntre(a: Coordenadas, b: Coordenadas) {
+  const rad = Math.PI / 180;
+  const y = Math.sin((b.lng - a.lng) * rad) * Math.cos(b.lat * rad);
+  const x = Math.cos(a.lat * rad) * Math.sin(b.lat * rad) - Math.sin(a.lat * rad) * Math.cos(b.lat * rad) * Math.cos((b.lng - a.lng) * rad);
+  return (Math.atan2(y, x) / rad + 360) % 360;
+}
+
+function textoDestino(vehiculoId: string, p: ParadaMapa) {
+  const orden = paradasDe(vehiculoId).findIndex(x => x.id === p.id) + 1;
+  return `${orden}. ${p.clienteNombre} · ${p.direccion}, ${p.comuna}`;
+}
+
+/**
+ * Si el teléfono del chofer informa su posición, el marcador muestra esa posición (no la simulada)
+ * y el panel indica a qué parada va en camino y cuánto le falta. Devuelve false si no hay GPS reciente.
+ */
+function pasoGps(f: FurgonVista, sim: Simulacion, obj: Objetivo): boolean {
+  const u = appStore.ubicacionDe(f.id);
+  if (!ubicacionVigente(u)) return false;
+  const pos = { lat: u.lat, lng: u.lng };
+  const rumbo = distanciaM(sim.pos, pos) > 3 ? rumboEntre(sim.pos, pos) : undefined;
+  sim.pos = pos;
+  sim.v = 0;
+  // Al volver a la simulación (GPS perdido) se recalcula la ruta desde la última posición real
+  sim.objetivoId = null;
+  sim.mov = null;
+  moverMarcador(f.id, pos, rumbo);
+
+  // Ruta por calles desde la posición real hasta la parada, recalculada cada ~80 m
+  const previo = trazadoGps.get(f.id);
+  if (!previo || previo.objetivoId !== obj.id || distanciaM(previo.desde, pos) > 80) {
+    trazadoGps.set(f.id, { desde: pos, objetivoId: obj.id });
+    trazarRuta(pos, obj.coords).then(t => {
+      if (desmontado || trazadoGps.get(f.id)?.desde !== pos) return;
+      dibujarTramo(f.id, f.color, t);
+    });
+  }
+
+  const gps = u.fuente === 'gps' ? 'vivo' : 'simulado_chofer';
+  if (obj.esBodega) {
+    Object.assign(f, { fase: 'manejando', gps, destino: null, estadoTexto: 'Volviendo a bodega central', velocidadKmh: null, etaMin: null, kmRestantes: distanciaM(pos, obj.coords) / 1000 });
+    return true;
+  }
+  const llegada = appStore.estadoLlegada(obj.id);
+  const p = pendientesDe(f.id).find(x => x.id === obj.id);
+  const destino = p ? textoDestino(f.id, p) : obj.nombre;
+  if (llegada.estado === 'en_destino') {
+    Object.assign(f, { fase: 'en_parada', gps, destino, estadoTexto: `Llegó a ${obj.nombre} · puede confirmar la entrega`, velocidadKmh: null, etaMin: 0, kmRestantes: 0 });
+  } else {
+    const falta = llegada.distanciaM !== null ? ` · faltan ${formatoDistancia(llegada.distanciaM)}` : '';
+    const precision = llegada.estado === 'precision_baja' ? ' · señal GPS débil' : '';
+    Object.assign(f, {
+      fase: 'manejando', gps, destino, estadoTexto: `En camino a ${obj.nombre}${falta}${precision}`,
+      velocidadKmh: null, etaMin: llegada.distanciaM !== null ? Math.max(1, Math.round(llegada.distanciaM / 8.5 / 60)) : null,
+      kmRestantes: llegada.distanciaM !== null ? llegada.distanciaM / 1000 : null
+    });
+  }
+  return true;
+}
 
 const sims = new Map<string, Simulacion>(flota.map(f => [
   f.id, { pos: BODEGA_CENTRAL, v: 0, objetivoId: null, mov: null }
@@ -196,11 +296,16 @@ function dibujarParadas() {
   ];
   // Paradas numeradas por furgón, con el borde del color de su furgón
   flota.forEach(f => {
+    const turno = turnoHoy(f.id);
+    const objetivoId = turno?.estado === 'en_ruta' ? pendientesDe(f.id)[0]?.id : undefined;
     paradasDe(f.id).forEach((p, idx) => {
       const clase = p.estado === 'entregado' || p.estado === 'parcial' ? 'is-done' : p.estado === 'ausente' ? 'is-absent' : 'is-pending';
+      const esObjetivo = p.id === objetivoId;
       marcadoresParadas.push(m.marcadorHtml(p.coords, {
-        clase: `stop-marker ${clase}`, html: `<span style="border-color:${f.color}">${idx + 1}</span>`,
-        titulo: `${f.nombre} · ${idx + 1}. ${p.clienteNombre} · ${p.direccion}`, tamano: 26, zIndex: 10
+        clase: `stop-marker ${clase}${esObjetivo ? ' is-target' : ''}`,
+        html: `<span style="border-color:${f.color}${esObjetivo ? `;background:${f.color}` : ''}">${idx + 1}</span>`,
+        titulo: `${f.nombre} · ${idx + 1}. ${p.clienteNombre} · ${p.direccion}${esObjetivo ? ' · en camino' : ''}`,
+        tamano: esObjetivo ? 32 : 26, zIndex: esObjetivo ? 20 : 10
       }));
     });
   });
@@ -279,9 +384,16 @@ function paso(f: FurgonVista, sim: Simulacion, dt: number) {
     sim.pos = BODEGA_CENTRAL;
     sim.v = 0;
     moverMarcador(f.id, sim.pos);
-    Object.assign(f, { fase: 'estacionado', estadoTexto: obj.estacionado, velocidadKmh: 0, etaMin: null, kmRestantes: null });
+    trazadoGps.delete(f.id);
+    Object.assign(f, { fase: 'estacionado', estadoTexto: obj.estacionado, destino: null, gps: 'simulacion', velocidadKmh: 0, etaMin: null, kmRestantes: null });
     return;
   }
+
+  // Posición real del teléfono del chofer, si la hay
+  if (pasoGps(f, sim, obj)) return;
+  if (trazadoGps.delete(f.id)) dibujarTramo(f.id, f.color, null);
+  const paradaObj = obj.esBodega ? undefined : pendientesDe(f.id).find(x => x.id === obj.id);
+  Object.assign(f, { gps: 'simulacion', destino: paradaObj ? textoDestino(f.id, paradaObj) : null });
 
   // 2. Si cambió el destino (ej: el chofer confirmó una entrega), se calcula la ruta desde donde está
   if (sim.objetivoId !== obj.id) {
@@ -346,7 +458,7 @@ function paso(f: FurgonVista, sim: Simulacion, dt: number) {
   const esperaSemaforos = t.semaforos.slice(mov.semaforoIdx).reduce((acc, s) => acc + s.esperaSeg, 0);
   Object.assign(f, {
     fase: 'manejando',
-    estadoTexto: obj.esBodega ? 'Volviendo a bodega central' : `Hacia ${obj.nombre}`,
+    estadoTexto: obj.esBodega ? 'Volviendo a bodega central' : `En camino a ${obj.nombre}`,
     velocidadKmh: Math.round(sim.v * 3.6),
     kmRestantes: restante / 1000,
     etaMin: Math.max(1, Math.round((restante / 8.5 + esperaSemaforos) / 60))
@@ -481,6 +593,10 @@ onBeforeUnmount(() => {
   padding-left: 8px;
   border-left: 1px solid rgba(255, 255, 255, 0.3);
   opacity: 0.75;
+}
+
+.sim-chip.live .sim-dot {
+  background: var(--zun-verde);
 }
 
 .sim-dot {
@@ -626,6 +742,50 @@ onBeforeUnmount(() => {
   gap: 4px;
 }
 
+.gps-tag.gps-vivo {
+  color: var(--zun-verde);
+  font-weight: 700;
+}
+
+.gps-tag.gps-simulado_chofer {
+  color: var(--am-petroleo);
+  font-weight: 700;
+}
+
+.target-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--am-petroleo);
+  line-height: 1.35;
+}
+
+.target-line svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.arrival-request {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fef9c3;
+  border: 1px solid #facc15;
+  color: #422006;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  cursor: default;
+}
+
+.arrival-request-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .legend-card {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -650,6 +810,7 @@ onBeforeUnmount(() => {
 
 .legend-dot.is-done { background: var(--zun-verde); border-color: var(--zun-verde); }
 .legend-dot.is-absent { border-color: var(--zun-rojo); }
+.legend-dot.is-target { background: var(--am-petroleo); border-color: var(--am-petroleo); box-shadow: 0 0 0 3px var(--acento-suave); }
 .legend-dot.is-base { background: var(--am-noche); border-color: var(--am-noche); border-radius: 3px; }
 
 /* Marcadores del mapa (HTML inyectado fuera del scope del componente) */
@@ -723,6 +884,21 @@ onBeforeUnmount(() => {
   background: #10b981;
   border-color: #10b981;
   color: #ffffff;
+}
+
+:deep(.stop-marker.is-target span) {
+  color: #ffffff;
+  font-size: 13px;
+  animation: target-ring 1.6s ease-out infinite;
+}
+
+@keyframes target-ring {
+  0% { box-shadow: 0 0 0 0 rgba(11, 94, 110, 0.45), 0 2px 6px rgba(0, 0, 0, 0.25); }
+  100% { box-shadow: 0 0 0 12px rgba(11, 94, 110, 0), 0 2px 6px rgba(0, 0, 0, 0.25); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :deep(.stop-marker.is-target span) { animation: none; }
 }
 
 :deep(.stop-marker.is-absent span) {
