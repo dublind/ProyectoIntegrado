@@ -3,9 +3,9 @@
     <!-- Barra lateral de navegación (en móvil pasa a barra inferior) -->
     <aside class="sidebar">
       <RouterLink to="/indicadores" class="brand">
-        <span class="brand-logo"><Droplets :size="20" /></span>
+        <img :src="logoMarca" alt="" class="brand-logo" width="40" height="40" />
         <span class="brand-text">
-          <span class="brand-title">Aguas purificadas</span>
+          <span class="brand-title">AguaMantra</span>
           <span class="brand-sub">Gestión y reparto</span>
         </span>
       </RouterLink>
@@ -44,6 +44,13 @@
           <h1>{{ route.meta.title }}</h1>
           <p>{{ route.meta.descripcion }}</p>
         </div>
+        <span class="live-pill" title="Se actualiza al instante con lo que registra el chofer">
+          <span class="live-dot"></span> En vivo
+        </span>
+        <RouterLink to="/inventario" :class="['audit-pill', { fail: !appStore.auditoria.value.ok }]"
+          :title="appStore.auditoria.value.ok ? 'Todos los módulos cuadran' : 'Hay un descuadre: revisa Inventario'">
+          {{ appStore.auditoria.value.ok ? 'Cuadratura OK' : 'Descuadre' }}
+        </RouterLink>
         <RouterLink to="/inventario" class="stock-pill" title="Ecuación de cuadratura continua de stock">
           <span class="stock-dot"></span>
           <span class="stock-label">Stock total</span>
@@ -64,6 +71,7 @@
       </div>
 
       <main class="workspace">
+        <FlujoDelDia class="flujo-bar" />
         <RouterView v-slot="{ Component }">
           <Transition name="fade-view" mode="out-in">
             <component :is="Component" />
@@ -77,10 +85,20 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
-import { ClipboardList, Droplets, LayoutDashboard, MapPinned, RefreshCw, Smartphone, Truck, Warehouse } from 'lucide-vue-next';
+import logoMarca from '../assets/aguamantra-marca.jpg';
+import { ClipboardList, LayoutDashboard, MapPinned, RefreshCw, Smartphone, Truck, Warehouse } from 'lucide-vue-next';
+import FlujoDelDia from '../components/FlujoDelDia.vue';
 import { appStore } from '../store/useAppStore';
+import { notificar } from '../store/useToast';
 
 const route = useRoute();
+
+// Lo que el chofer registra en su app (otra pestaña) aparece aquí al instante
+appStore.alRecibirActividadRemota(nuevas => {
+  nuevas.filter(a => a.origen === 'chofer').reverse().forEach(a => {
+    notificar(`Chofer: ${a.texto}`, a.tipo === 'error' ? 'error' : a.tipo === 'exito' ? 'exito' : 'info', 5000);
+  });
+});
 
 const pedidosPorCobrar = computed(() => appStore.state.pedidos.filter(p => p.estado === 'pendiente_pago').length);
 const pedidosPorDespachar = computed(() => appStore.state.pedidos.filter(p => p.estado === 'pagado').length);
@@ -127,6 +145,17 @@ const usuario = computed(() => {
   gap: 26px;
 }
 
+/* Franja con el cielo del logo */
+.sidebar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--am-cielo);
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -136,15 +165,18 @@ const usuario = computed(() => {
 }
 
 .brand-logo {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  background: var(--zun-negro);
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  object-fit: cover;
   flex-shrink: 0;
+  box-shadow: 0 0 0 2px var(--zun-blanco), 0 0 0 3px var(--am-hielo);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease;
+}
+
+.brand:hover .brand-logo {
+  transform: rotate(-4deg) scale(1.05);
+  box-shadow: 0 0 0 2px var(--zun-blanco), 0 0 0 3px var(--am-cian);
 }
 
 .brand-text {
@@ -153,12 +185,12 @@ const usuario = computed(() => {
 }
 
 .brand-title {
-  font-family: var(--font-display);
-  font-size: 1.02rem;
-  font-weight: 800;
-  color: var(--zun-negro);
-  letter-spacing: -0.02em;
-  line-height: 1.15;
+  font-family: var(--font-marca);
+  font-size: 1.22rem;
+  font-weight: 700;
+  color: var(--am-noche);
+  letter-spacing: -0.01em;
+  line-height: 1.1;
 }
 
 .brand-sub {
@@ -199,16 +231,17 @@ const usuario = computed(() => {
 }
 
 .side-link:hover {
-  color: var(--zun-rojo);
-  border-color: var(--zun-rojo);
-  box-shadow: 2px 2px 0 var(--zun-rojo);
+  color: var(--acento);
+  border-color: var(--acento);
+  box-shadow: 2px 2px 0 var(--acento);
   transform: translate(-1px, -1px);
 }
 
 .side-link.router-link-active {
-  background: var(--zun-negro);
+  background: var(--am-noche);
   color: #ffffff;
-  border-color: var(--zun-negro);
+  border-color: var(--am-noche);
+  box-shadow: inset 3px 0 0 var(--am-hielo);
 }
 
 .side-icon {
@@ -328,6 +361,59 @@ const usuario = computed(() => {
   color: var(--zun-gris);
 }
 
+.topbar-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #065f46;
+  white-space: nowrap;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--zun-verde);
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+  animation: live 1.8s infinite;
+}
+
+@keyframes live {
+  70% { box-shadow: 0 0 0 7px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.audit-pill {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--zun-verde-light);
+  color: #065f46;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.audit-pill.fail {
+  background: var(--zun-rojo);
+  color: #ffffff;
+  border-color: var(--zun-rojo);
+}
+
+.flujo-bar {
+  margin-bottom: 22px;
+}
+
 .stock-pill {
   display: flex;
   align-items: center;
@@ -345,8 +431,8 @@ const usuario = computed(() => {
 }
 
 .stock-pill:hover {
-  border-color: var(--zun-rojo);
-  box-shadow: 2px 2px 0 var(--zun-rojo);
+  border-color: var(--acento);
+  box-shadow: 2px 2px 0 var(--acento);
   transform: translate(-1px, -1px);
 }
 

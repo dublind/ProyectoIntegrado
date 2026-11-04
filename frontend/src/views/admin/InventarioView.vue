@@ -13,6 +13,45 @@
       </div>
     </div>
 
+    <!-- Auditoría de cuadratura: se recalcula con cada acción del panel o del chofer -->
+    <section :class="['card', 'audit-card', auditoria.ok ? 'audit-ok' : 'audit-fail']">
+      <div class="card-head">
+        <div>
+          <h2 class="card-title">
+            <component :is="auditoria.ok ? ShieldCheck : ShieldAlert" :size="18" />
+            {{ auditoria.ok ? 'Cuadratura correcta' : 'Descuadre detectado' }}
+          </h2>
+          <p class="card-sub">Se verifica en cada acción, incluidas las que registra el chofer desde su app. Última
+            actualización: {{ horaActualizacion }}.</p>
+        </div>
+      </div>
+      <ul class="audit-list">
+        <li v-for="c in auditoria.controles" :key="c.nombre" :class="{ fail: !c.ok }">
+          <component :is="c.ok ? CircleCheck : CircleX" :size="16" />
+          <strong>{{ c.nombre }}</strong>
+          <span>{{ c.detalle }}</span>
+        </li>
+      </ul>
+    </section>
+
+    <!-- Pedidos de prueba -->
+    <section class="card demo-card">
+      <div>
+        <h2 class="card-title">Pedidos de prueba</h2>
+        <p class="card-sub">Crea compras ficticias con las mismas acciones de la app: ~25% queda por cobrar, el resto se
+          paga y se carga al furgón mientras haya capacidad.</p>
+      </div>
+      <div class="demo-actions">
+        <select v-model.number="cantidadDemo" aria-label="Cantidad de pedidos de prueba">
+          <option :value="5">5 pedidos</option>
+          <option :value="10">10 pedidos</option>
+          <option :value="20">20 pedidos</option>
+          <option :value="40">40 pedidos</option>
+        </select>
+        <button @click="generarDemo" class="btn btn-primary btn-sm"><Sparkles :size="14" /> Generar</button>
+      </div>
+    </section>
+
     <!-- Disponibles vs total físico (PBI 72, criterio 4) -->
     <div class="split-grid">
       <section class="card stock-block">
@@ -24,9 +63,13 @@
         <div class="block-value">{{ totalFisicoBodega }}<span class="unit">llenos + vacíos + rotos</span></div>
       </section>
       <section class="card stock-block">
-        <span class="block-label">Fuera de bodega</span>
-        <div class="block-value">{{ inv.enTransito + inv.pendientesDevolucion }}<span class="unit">en furgón + en
-            clientes</span></div>
+        <span class="block-label">En el furgón</span>
+        <div class="block-value">{{ carga.total }}<span class="unit">{{ carga.llenos }} llenos por entregar · {{ carga.vacios }}
+            vacíos recogidos</span></div>
+      </section>
+      <section class="card stock-block">
+        <span class="block-label">En clientes</span>
+        <div class="block-value">{{ inv.pendientesDevolucion }}<span class="unit">envases pendientes de devolución</span></div>
       </section>
     </div>
 
@@ -195,13 +238,27 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { RefreshCw, RotateCcw } from 'lucide-vue-next';
+import { CircleCheck, CircleX, RefreshCw, RotateCcw, ShieldAlert, ShieldCheck, Sparkles } from 'lucide-vue-next';
+import { generarPedidosDemo } from '../../store/demo';
 import { appStore } from '../../store/useAppStore';
 import { notificar } from '../../store/useToast';
 import { formatFechaCorta } from '../../utils/formato';
 import type { RegistroEnvase } from '../../types';
 
 const inv = computed(() => appStore.state.inventario);
+const carga = computed(() => appStore.cargaFurgon.value);
+const auditoria = computed(() => appStore.auditoria.value);
+const horaActualizacion = computed(() => {
+  const t = appStore.state.actualizadoEn;
+  return t ? new Date(t).toLocaleTimeString('es-CL') : '—';
+});
+
+const cantidadDemo = ref(20);
+
+function generarDemo() {
+  const r = generarPedidosDemo(cantidadDemo.value);
+  notificar(`${r.creados} pedidos creados: ${r.pagados} pagados, ${r.asignados} cargados al furgón${r.sinCupo ? `, ${r.sinCupo} esperan cupo` : ''}.`, 'exito', 6000);
+}
 const totalFisicoBodega = computed(() => inv.value.llenosCentral + inv.value.vaciosCentral + inv.value.rotosBodega);
 const historial = computed(() => appStore.state.registrosEnvases.filter(r => r.estado !== 'pendiente').slice().reverse());
 
@@ -415,7 +472,74 @@ function reset() {
 
 .counter-fill {
   height: 100%;
-  background: var(--zun-negro);
+  background: linear-gradient(90deg, var(--am-petroleo), var(--am-turquesa));
+}
+
+.audit-card .card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.audit-ok {
+  border-left: 4px solid var(--zun-verde);
+}
+
+.audit-ok .card-title {
+  color: #065f46;
+}
+
+.audit-fail {
+  border-left: 4px solid var(--zun-rojo);
+  background: var(--zun-rojo-light);
+}
+
+.audit-fail .card-title {
+  color: #991b1b;
+}
+
+.audit-list {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 8px 20px;
+}
+
+.audit-list li {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  column-gap: 8px;
+  align-items: center;
+  font-size: 0.84rem;
+  color: #065f46;
+}
+
+.audit-list li span {
+  grid-column: 2;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--zun-gris);
+}
+
+.audit-list li.fail {
+  color: #991b1b;
+}
+
+.demo-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.demo-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.demo-actions select {
+  padding: 8px 12px;
 }
 
 .modal-sm {

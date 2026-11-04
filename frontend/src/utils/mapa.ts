@@ -13,6 +13,7 @@ export type ProveedorMapa = 'google' | 'osm';
 export interface MarcadorMapa {
   mover(c: Coordenadas): void;
   posicion(): Coordenadas;
+  elemento(): HTMLElement | null; // nodo HTML del marcador, para animar detalles como el rumbo
   quitar(): void;
 }
 
@@ -56,6 +57,7 @@ function crearMapaOsm(el: HTMLElement, centro: Coordenadas): MapaAdapter {
       return {
         mover: p => m.setLatLng([p.lat, p.lng]),
         posicion: () => ({ lat: m.getLatLng().lat, lng: m.getLatLng().lng }),
+        elemento: () => m.getElement() ?? null,
         quitar: () => m.remove()
       };
     },
@@ -123,6 +125,7 @@ async function crearMapaGoogle(el: HTMLElement, centro: Coordenadas): Promise<Ma
           if (!p) return centro;
           return p instanceof google.maps.LatLng ? { lat: p.lat(), lng: p.lng() } : { lat: Number(p.lat), lng: Number(p.lng) };
         },
+        elemento: () => contenido,
         quitar: () => { m.map = null; }
       };
     },

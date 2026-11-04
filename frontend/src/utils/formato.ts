@@ -26,12 +26,12 @@ export function formatEstado(estado: string) {
 
 export function getBadgeClass(estado: string) {
   const map: Record<string, string> = {
-    pendiente_pago: 'badge-warning',
+    pendiente_pago: 'badge-urgent',
     pagado: 'badge-primary',
-    en_despacho: 'badge-neutral',
+    en_despacho: 'badge-live',
     entregado: 'badge-success',
-    parcial: 'badge-warning',
-    ausente: 'badge-danger'
+    parcial: 'badge-alert',
+    ausente: 'badge-urgent'
   };
   return map[estado] || 'badge-neutral';
 }

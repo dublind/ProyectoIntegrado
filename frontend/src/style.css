@@ -37,6 +37,28 @@
   --zun-ambar-hover: #d97706;
   --zun-ambar-light: #fffbeb;
 
+  /* 5. MARCA AGUAMANTRA (paletas enviadas por el cliente) */
+  /* Paleta 1: azules petróleo para interacción y detalles */
+  --am-petroleo: #0B5E6E;
+  --am-verdoso: #2E8B9A;
+  --am-turquesa: #57AAB4;
+  --am-noche: #041F26;
+  --am-oliva: #1E4A45;
+  /* Paleta 2: cielo del logo */
+  --am-electrico: #0022FF;
+  --am-cian: #0077FF;
+  --am-hielo: #88CCFF;
+  /* Paleta 3: acentos cálidos */
+  --am-dorado: #F2D08A;
+  --am-crema: #F9F6EE;
+  --am-esterilla: #8DB8B2;
+  --am-cielo: linear-gradient(90deg, var(--am-electrico) 0%, var(--am-cian) 55%, var(--am-hielo) 100%);
+  --font-marca: 'Playfair Display', Georgia, serif;
+
+  /* Acento de interacción (hover, foco, progreso). El rojo queda solo para alertas y errores. */
+  --acento: var(--am-petroleo);
+  --acento-suave: rgba(11, 94, 110, 0.12);
+
   /* Aliases de Compatibilidad */
   --primary: var(--zun-negro);
   --primary-hover: var(--zun-rojo);
@@ -118,7 +140,7 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid var(--zun-rojo) !important;
+  outline: 3px solid var(--am-turquesa) !important;
   outline-offset: 2px !important;
 }
 
@@ -142,7 +164,8 @@ input, select, textarea {
 }
 
 input:focus, select:focus, textarea:focus {
-  border-color: var(--zun-rojo);
+  border-color: var(--acento);
+  box-shadow: 0 0 0 3px var(--acento-suave);
   background-color: #ffffff;
 }
 
@@ -153,7 +176,10 @@ input:focus, select:focus, textarea:focus {
 .badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
+  white-space: nowrap;
+  vertical-align: middle;
   padding: 5px 12px;
   border-radius: var(--radius-pill);
   font-family: var(--font-mono);
@@ -165,7 +191,7 @@ input:focus, select:focus, textarea:focus {
 }
 
 .badge-primary {
-  background: var(--zun-negro);
+  background: var(--am-noche);
   color: var(--zun-blanco);
 }
 
@@ -185,6 +211,28 @@ input:focus, select:focus, textarea:focus {
   background: var(--zun-rojo-light);
   color: #991b1b;
   border: 1px solid rgba(255, 38, 42, 0.3);
+}
+
+/* Variantes sólidas para estados que requieren atención inmediata */
+.badge-alert {
+  background: #facc15;
+  color: #422006;
+  border: 1px solid #eab308;
+  font-weight: 700;
+}
+
+.badge-urgent {
+  background: var(--zun-rojo);
+  color: #ffffff;
+  border: 1px solid var(--zun-rojo);
+  font-weight: 700;
+}
+
+.badge-live {
+  background: var(--zun-verde);
+  color: #ffffff;
+  border: 1px solid var(--zun-verde);
+  font-weight: 700;
 }
 
 .badge-neutral {
@@ -218,16 +266,16 @@ input:focus, select:focus, textarea:focus {
 
 /* Botón Primario: Negro sólido con salto y sombra roja en hover */
 .btn-primary {
-  background: var(--zun-negro) !important;
+  background: var(--am-noche) !important;
   color: #ffffff !important;
-  border-color: var(--zun-negro) !important;
+  border-color: var(--am-noche) !important;
 }
 
 .btn-primary:hover {
-  background: var(--zun-negro) !important;
+  background: var(--am-noche) !important;
   color: #ffffff !important;
-  border-color: var(--zun-negro) !important;
-  box-shadow: 3px 3px 0px var(--zun-rojo) !important;
+  border-color: var(--am-noche) !important;
+  box-shadow: 3px 3px 0px var(--am-turquesa) !important;
   transform: translate(-2px, -2px) !important;
 }
 
@@ -253,9 +301,9 @@ input:focus, select:focus, textarea:focus {
 
 .btn-secondary:hover {
   background: #ffffff !important;
-  border-color: var(--zun-rojo) !important;
-  color: var(--zun-rojo) !important;
-  box-shadow: 2px 2px 0px var(--zun-rojo) !important;
+  border-color: var(--acento) !important;
+  color: var(--acento) !important;
+  box-shadow: 2px 2px 0px var(--acento) !important;
   transform: translate(-1px, -1px) !important;
 }
 
@@ -309,8 +357,8 @@ input:focus, select:focus, textarea:focus {
 }
 
 .card-interactive:hover {
-  border-color: var(--zun-rojo) !important;
-  box-shadow: 3px 3px 0px var(--zun-rojo) !important;
+  border-color: var(--acento) !important;
+  box-shadow: 3px 3px 0px var(--acento) !important;
   transform: translate(-2px, -2px) !important;
 }
 
@@ -321,7 +369,7 @@ input:focus, select:focus, textarea:focus {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(17, 17, 17, 0.65);
+  background: rgba(4, 31, 38, 0.62);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
@@ -386,14 +434,19 @@ input:focus, select:focus, textarea:focus {
 }
 
 .btn-close:hover {
-  color: var(--zun-rojo);
-  border-color: var(--zun-rojo);
+  color: var(--acento);
+  border-color: var(--acento);
   background: var(--zun-blanco);
 }
 
 @keyframes modalIn {
   from { opacity: 0; transform: translateY(10px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+::selection {
+  background: var(--am-hielo);
+  color: var(--am-noche);
 }
 
 /* ==========================================================================

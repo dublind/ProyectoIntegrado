@@ -1,25 +1,8 @@
 import type { Coordenadas } from '../types';
+import { buscarComuna } from './comunas';
 
 // Bodega central (punto de partida y retorno de los furgones)
 export const BODEGA_CENTRAL: Coordenadas = { lat: -33.4489, lng: -70.6260 };
-
-// Centros aproximados de comunas para geocodificación simulada (sin Google Geocoding API)
-const CENTROS_COMUNA: Record<string, Coordenadas> = {
-  'providencia': { lat: -33.4314, lng: -70.6093 },
-  'santiago centro': { lat: -33.4378, lng: -70.6504 },
-  'santiago': { lat: -33.4378, lng: -70.6504 },
-  'ñuñoa': { lat: -33.4569, lng: -70.5975 },
-  'nunoa': { lat: -33.4569, lng: -70.5975 },
-  'las condes': { lat: -33.4103, lng: -70.5679 },
-  'la reina': { lat: -33.4450, lng: -70.5350 },
-  'macul': { lat: -33.4870, lng: -70.5990 },
-  'san miguel': { lat: -33.4970, lng: -70.6510 },
-  'vitacura': { lat: -33.3900, lng: -70.5930 },
-  'recoleta': { lat: -33.4060, lng: -70.6400 },
-  'independencia': { lat: -33.4160, lng: -70.6650 },
-  'estación central': { lat: -33.4590, lng: -70.6980 },
-  'la florida': { lat: -33.5220, lng: -70.5980 }
-};
 
 function hashTexto(texto: string): number {
   let h = 0;
@@ -34,7 +17,7 @@ function hashTexto(texto: string): number {
  * con un desplazamiento determinístico (la misma dirección cae siempre en el mismo punto).
  */
 export function geocodificarSimulado(direccion: string, comuna: string): Coordenadas {
-  const centro = CENTROS_COMUNA[comuna.trim().toLowerCase()] ?? BODEGA_CENTRAL;
+  const centro = buscarComuna(comuna)?.centro ?? BODEGA_CENTRAL;
   const h = hashTexto(`${direccion}|${comuna}`.toLowerCase());
   const dLat = ((h & 0xff) / 255 - 0.5) * 0.014;
   const dLng = (((h >> 8) & 0xff) / 255 - 0.5) * 0.018;

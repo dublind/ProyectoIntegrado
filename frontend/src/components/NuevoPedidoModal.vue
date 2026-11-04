@@ -75,14 +75,20 @@
           </div>
           <div :class="['form-group', { 'has-error': errores.comuna }]" style="flex: 1;">
             <label for="np-comuna">Comuna</label>
-            <input id="np-comuna" v-model="form.comuna" type="text" list="np-comunas" placeholder="Providencia"
-              :aria-invalid="!!errores.comuna" :aria-describedby="errores.comuna ? 'np-comuna-error' : undefined"
-              @blur="validarCampo('comuna')" @input="limpiarSiCorrige('comuna')" />
-            <datalist id="np-comunas">
-              <option v-for="c in comunasSugeridas" :key="c" :value="c" />
-            </datalist>
+            <select id="np-comuna" v-model="form.comuna" :aria-invalid="!!errores.comuna"
+              :aria-describedby="errores.comuna ? 'np-comuna-error' : 'np-comuna-hint'"
+              @change="validarCampo('comuna')">
+              <option value="" disabled>Selecciona una comuna</option>
+              <optgroup v-for="g in gruposComunas" :key="g.tramo"
+                :label="g.recargo ? `${g.nombre} · delivery +${formatCLP(g.recargo)}` : `${g.nombre} · sin recargo`">
+                <option v-for="c in g.comunas" :key="c" :value="c">{{ c }}</option>
+              </optgroup>
+            </select>
             <span v-if="errores.comuna" id="np-comuna-error" class="field-error" role="alert">
               <CircleAlert :size="14" /> {{ errores.comuna }}
+            </span>
+            <span v-else id="np-comuna-hint" class="field-hint">
+              {{ recargo ? `Delivery +${formatCLP(recargo)}` : 'Sin recargo de delivery' }}
             </span>
           </div>
         </div>
@@ -108,8 +114,18 @@
         </div>
 
         <div class="form-summary">
-          <span>Total a pagar (3.500 c/u)</span>
-          <span class="total-highlight">{{ formatCLP((Number(form.cantidadBidones) || 0) * 3500) }}</span>
+          <div class="summary-line">
+            <span>{{ Number(form.cantidadBidones) || 0 }} bidón(es) × $3.500</span>
+            <span class="font-mono">{{ formatCLP(subtotal) }}</span>
+          </div>
+          <div class="summary-line">
+            <span>Delivery {{ form.comuna ? `· ${form.comuna}` : '' }}</span>
+            <span class="font-mono">{{ recargo ? formatCLP(recargo) : 'Sin recargo' }}</span>
+          </div>
+          <div class="summary-line summary-total">
+            <span>Total a pagar</span>
+            <span class="total-highlight">{{ formatCLP(subtotal + recargo) }}</span>
+          </div>
         </div>
 
         <div class="modal-footer">
@@ -127,12 +143,13 @@ import { AlertTriangle, Ban, CircleAlert } from 'lucide-vue-next';
 import { appStore } from '../store/useAppStore';
 import { notificar } from '../store/useToast';
 import { formatCLP } from '../utils/formato';
+import { buscarComuna, comunasPorTramo, recargoDelivery } from '../utils/comunas';
 import { normalizarTelefono, validarCampoPedido, validarPedido } from '../utils/validacion';
 import type { DatosPedidoForm, ErroresPedido } from '../utils/validacion';
 
 const emit = defineEmits<{ cerrar: [] }>();
 
-const comunasSugeridas = ['Providencia', 'Santiago Centro', 'Ñuñoa', 'Las Condes', 'La Reina', 'Macul', 'San Miguel', 'Vitacura', 'Recoleta', 'La Florida'];
+const gruposComunas = comunasPorTramo();
 
 const clienteSeleccionadoId = ref('');
 const form = reactive({
@@ -146,6 +163,9 @@ const form = reactive({
   medioPago: 'webpay' as 'webpay' | 'transferencia'
 });
 const errores = reactive<ErroresPedido>({});
+
+const subtotal = computed(() => (Number(form.cantidadBidones) || 0) * 3500);
+const recargo = computed(() => recargoDelivery(form.comuna));
 
 const deudaCliente = computed(() => (form.clienteId ? appStore.retirosPendientesCliente(form.clienteId) : 0));
 const bajasCliente = computed(() => (form.clienteId ? appStore.bajasNoRetornoCliente(form.clienteId) : 0));
@@ -187,7 +207,8 @@ function onClienteSeleccionado() {
   form.nombre = cli.nombre;
   form.telefono = cli.telefono;
   form.direccion = cli.direccion;
-  form.comuna = cli.comuna;
+  // Normaliza al nombre del catálogo (ej: "santiago" → "Santiago Centro") para que el selector lo muestre
+  form.comuna = buscarComuna(cli.comuna)?.nombre ?? '';
   if (cli.ultimoPedido) {
     form.cantidadBidones = cli.ultimoPedido.cantidadBidones;
     form.tipoProducto = cli.ultimoPedido.tipoProducto;
@@ -263,13 +284,29 @@ async function guardar() {
 
 .form-summary {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 6px;
   background: var(--zun-blanco-sutil);
   border: 1px solid var(--zun-border);
   padding: 16px 22px;
   border-radius: var(--radius-sm);
+}
+
+.summary-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.88rem;
+  color: var(--zun-gris-dark);
+}
+
+.summary-total {
+  padding-top: 8px;
+  margin-top: 2px;
+  border-top: 1px solid var(--zun-border);
   font-weight: 700;
+  color: var(--zun-negro);
 }
 
 .total-highlight {

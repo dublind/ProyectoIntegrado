@@ -25,7 +25,8 @@
             <div class="cap-bar" role="progressbar" :aria-valuenow="turno.botellonesCargados" :aria-valuemax="turno.capacidadMax">
               <div class="cap-fill" :style="{ width: `${Math.min(100, (turno.botellonesCargados / turno.capacidadMax) * 100)}%` }"></div>
             </div>
-            <span class="text-xs text-muted">Capacidad máxima parametrizable (N_max)</span>
+            <span class="text-xs text-muted">{{ appStore.cargaFurgon.value.llenos }} llenos por entregar · {{
+              appStore.cargaFurgon.value.vacios }} vacíos recogidos · N_max parametrizable</span>
           </div>
           <div class="fleet-foot">
             <span class="text-sm">{{ paradasPendientes }} de {{ appStore.pedidosDespachoActivo.value.length }} paradas por
@@ -230,7 +231,7 @@ function liquidar() {
 
 .cap-fill {
   height: 100%;
-  background: var(--zun-negro);
+  background: linear-gradient(90deg, var(--am-petroleo), var(--am-turquesa));
   border-radius: 9999px;
   transition: width 0.3s;
 }

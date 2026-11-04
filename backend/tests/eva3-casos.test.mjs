@@ -9,7 +9,6 @@ import { createServer } from '../server.mjs';
 // Matriz de casos de prueba de la EVA3 (sección 5.4 del informe). Un test por caso CP-xx.
 // Los casos que dependen de algo que aún no existe quedan como test.todo con su reporte de error.
 let db, server, base, truck;
-let day = 0;
 const cookies = {};
 const channel = { sent: [], failures: 0 };
 const sender = async (n) => {
@@ -113,9 +112,9 @@ async function planningTurn() {
     turno = null;
   }
   if (!turno) {
-    // Un turno por fecha y nombre: cada turno de prueba usa el día siguiente
-    day++;
-    const fecha = new Date(Date.UTC(2026, 10, 3 + day)).toISOString().slice(0, 10);
+    // Un turno por fecha y nombre: cada turno de prueba usa el día siguiente al último existente.
+    // Fechas fijas chocaban con el turno sembrado con CURRENT_DATE según el día en que corre el CI.
+    const fecha = await value('SELECT (GREATEST(MAX(fecha), CURRENT_DATE) + 1)::TEXT AS n FROM turno');
     turno = await call('/turns', 'POST', {
       fecha,
       nombre: 'Mañana',
@@ -496,10 +495,17 @@ test('CP-18: inyección SQL y XSS se guardan como texto', async () => {
   assert.equal(Number(await value('SELECT COUNT(*)::INT n FROM cliente')), before + 2);
   assert.equal((await call(`/clients/${sql.id_cliente}`)).nombre, "' OR 1=1 --");
   assert.equal((await call(`/clients/${xss.id_cliente}`)).nombre, '<script>alert(1)</script>');
-  // La interfaz no inserta HTML sin escapar
-  const views = path.join(root, 'frontend/src/views');
-  for (const file of await readdir(views)) {
-    assert.doesNotMatch(await readFile(path.join(views, file), 'utf8'), /v-html/);
+  // La interfaz no inserta HTML sin escapar (las vistas están organizadas en subcarpetas)
+  const vistas = async dir => (await Promise.all((await readdir(dir, { withFileTypes: true })).map(e =>
+    e.isDirectory() ? vistas(path.join(dir, e.name)) : e.name.endsWith('.vue') ? [path.join(dir, e.name)] : []))).flat();
+  const archivos = [
+    ...await vistas(path.join(root, 'frontend/src/views')),
+    ...await vistas(path.join(root, 'frontend/src/components')),
+    ...await vistas(path.join(root, 'frontend/src/layouts'))
+  ];
+  assert.ok(archivos.length > 0);
+  for (const file of archivos) {
+    assert.doesNotMatch(await readFile(file, 'utf8'), /v-html/, file);
   }
 });
 

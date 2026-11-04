@@ -1,10 +1,11 @@
 import { reactive, computed } from 'vue';
-import type { Cliente, Pedido, Vehiculo, TurnoDespacho, CuentaBancaria, InventarioBodega, MedioPago, RegistroEnvase } from '../types';
+import type { Actividad, Cliente, Pedido, Vehiculo, TurnoDespacho, CuentaBancaria, InventarioBodega, MedioPago, RegistroEnvase } from '../types';
 import { geocodificarSimulado, ordenarPorCercania } from '../utils/geo';
 import { ahoraISO, diasDesde, hoyISO } from '../utils/formato';
 import { normalizarTelefono } from '../utils/validacion';
+import { recargoDelivery } from '../utils/comunas';
 
-const STORAGE_KEY = 'agua_purificada_mvp_store_v2';
+const STORAGE_KEY = 'agua_purificada_mvp_store_v3';
 
 // Fechas de la demo relativas a hoy, para que la antigüedad de los envases (30/60 días) sea visible
 function haceDias(dias: number, hora = '10:00') {
@@ -254,7 +255,7 @@ const turnoActivoInicial: TurnoDespacho = {
   pedidosIds: ['ped-101', 'ped-102', 'ped-103'],
   capacidadMax: 20,
   botellonesCargados: 7, // 2 + 4 + 1 = 7 botellones asignados
-  estado: 'en_ruta'
+  estado: 'preparacion' // el chofer confirma la carga e inicia la ruta desde su app
 };
 
 const inventarioInicial: InventarioBodega = {
@@ -266,6 +267,15 @@ const inventarioInicial: InventarioBodega = {
   noRetornaron30d: 2,
   bajasDefinitivas60d: 5
 };
+
+const STOCK_REFERENCIA_INICIAL =
+  inventarioInicial.llenosCentral + inventarioInicial.vaciosCentral + inventarioInicial.enTransito +
+  inventarioInicial.pendientesDevolucion + inventarioInicial.rotosBodega + inventarioInicial.bajasDefinitivas60d;
+
+export interface ResultadoAuditoria {
+  ok: boolean;
+  controles: { nombre: string; ok: boolean; detalle: string }[];
+}
 
 function clonar<T>(v: T): T {
   return JSON.parse(JSON.stringify(v));
@@ -281,15 +291,55 @@ class AppStore {
     turnoActivo: clonar(turnoActivoInicial),
     inventario: clonar(inventarioInicial),
     notificacionRotacion: null as string | null,
-    modoOffline: false
+    modoOffline: false,
+    actividad: [] as Actividad[],
+    // Envases que existen físicamente desde el inicio (stock total + bajas). Sirve para auditar la cuadratura.
+    stockReferencia: STOCK_REFERENCIA_INICIAL,
+    actualizadoEn: ''
   });
+
+  private oyentesRemotos: ((nuevas: Actividad[]) => void)[] = [];
 
   constructor() {
     this.cargarDesdeLocalStorage();
     this.sincronizarInventario();
+    this.escucharOtrasPestanas();
+  }
+
+  /**
+   * Sincronización en vivo entre pestañas del mismo navegador (panel y app del chofer abiertos a la vez).
+   * El evento `storage` solo llega a las otras pestañas, así que no hay bucles.
+   * Entre dispositivos distintos esto lo reemplazará Supabase Realtime.
+   */
+  private escucharOtrasPestanas() {
+    if (typeof window === 'undefined') return;
+    window.addEventListener('storage', e => {
+      if (e.key !== STORAGE_KEY || !e.newValue) return;
+      try {
+        const remoto = JSON.parse(e.newValue);
+        const idsLocales = new Set(this.state.actividad.map(a => a.id));
+        const nuevas = ((remoto.actividad ?? []) as Actividad[]).filter(a => !idsLocales.has(a.id));
+        const { modoOffline: _offlineRemoto, ...resto } = remoto;
+        Object.assign(this.state, resto);
+        if (nuevas.length) this.oyentesRemotos.forEach(fn => fn(nuevas));
+      } catch (err) {
+        console.warn('No se pudo sincronizar con otra pestaña', err);
+      }
+    });
+  }
+
+  // Permite al panel avisar lo que hizo el chofer en otra pestaña
+  alRecibirActividadRemota(fn: (nuevas: Actividad[]) => void) {
+    this.oyentesRemotos.push(fn);
+  }
+
+  private registrarActividad(texto: string, origen: Actividad['origen'], tipo: Actividad['tipo'] = 'info') {
+    this.state.actividad.unshift({ id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, texto, origen, tipo, fecha: ahoraISO() });
+    this.state.actividad.splice(30);
   }
 
   private guardarEnLocalStorage() {
+    this.state.actualizadoEn = new Date().toISOString();
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
     } catch (e) {
@@ -365,6 +415,49 @@ class AppStore {
       .sort((a, b) => b.dias - a.dias);
   });
 
+  // Llenos aún por entregar (paradas pendientes o ausentes); el resto de lo que va a bordo son vacíos
+  cargaFurgon = computed(() => {
+    const total = this.state.turnoActivo.botellonesCargados;
+    const llenos = this.pedidosDespachoActivo.value
+      .filter(p => p.estado === 'en_despacho' || p.estado === 'ausente')
+      .reduce((acc, p) => acc + p.cantidadBidones, 0);
+    return { total, llenos, vacios: total - llenos };
+  });
+
+  /**
+   * Auditoría de cuadratura: verifica que todos los módulos cuenten lo mismo después de cada acción.
+   * Si un control falla, hay un error de sincronización o de lógica.
+   */
+  auditoria = computed<ResultadoAuditoria>(() => {
+    const st = this.state;
+    const inv = st.inventario;
+    const activos = st.registrosEnvases.filter(r => r.estado === 'pendiente');
+    const deudaRegistros = activos.reduce((acc, r) => acc + r.cantidad, 0);
+    const carga = this.cargaFurgon.value;
+    const idsPedidos = new Set(st.pedidos.map(p => p.id));
+    const fueraDeTurno = st.pedidos.filter(p => p.estado === 'en_despacho' && !st.turnoActivo.pedidosIds.includes(p.id));
+    const clientesDescuadrados = st.clientes.filter(c =>
+      c.deudaEnvases !== activos.filter(r => r.clienteId === c.id).reduce((acc, r) => acc + r.cantidad, 0));
+    const fisico = this.totalStockContinuo.value + inv.bajasDefinitivas60d;
+    const negativos = (Object.entries(inv) as [string, number][]).filter(([, v]) => v < 0).map(([k]) => k);
+
+    const controles = [
+      { nombre: 'Stock físico conservado', ok: fisico === st.stockReferencia,
+        detalle: `${this.totalStockContinuo.value} en circulación + ${inv.bajasDefinitivas60d} bajas = ${fisico} (esperado ${st.stockReferencia})` },
+      { nombre: 'Furgón = inventario en tránsito', ok: inv.enTransito === carga.total,
+        detalle: `Inventario ${inv.enTransito} · furgón ${carga.total} (${carga.llenos} llenos + ${carga.vacios} vacíos)` },
+      { nombre: 'Vacíos a bordo no negativos', ok: carga.vacios >= 0, detalle: `${carga.vacios} vacíos a bordo` },
+      { nombre: 'Pendientes = fichas de clientes', ok: inv.pendientesDevolucion === deudaRegistros && clientesDescuadrados.length === 0,
+        detalle: clientesDescuadrados.length
+          ? `Descuadre en: ${clientesDescuadrados.map(c => c.nombre).join(', ')}`
+          : `${inv.pendientesDevolucion} en inventario · ${deudaRegistros} en registros` },
+      { nombre: 'Paradas del turno consistentes', ok: fueraDeTurno.length === 0 && st.turnoActivo.pedidosIds.every(id => idsPedidos.has(id)),
+        detalle: fueraDeTurno.length ? `${fueraDeTurno.length} pedido(s) en despacho fuera del turno` : `${st.turnoActivo.pedidosIds.length} paradas en el turno` },
+      { nombre: 'Sin cantidades negativas', ok: negativos.length === 0, detalle: negativos.length ? negativos.join(', ') : 'Todas ≥ 0' }
+    ];
+    return { ok: controles.every(c => c.ok), controles };
+  });
+
   alertasPendientesCount = computed(() => {
     return this.state.pedidos.filter(p => p.tieneAlertaDeuda || p.incidencia?.tipo === 'pendiente').length;
   });
@@ -430,9 +523,11 @@ class AppStore {
     }
 
     const precioUnitario = 3500;
-    const total = datos.cantidadBidones * precioUnitario;
+    const recargo = recargoDelivery(cliente.comuna);
+    const total = datos.cantidadBidones * precioUnitario + recargo;
     const nuevoId = `ped-${Date.now()}`;
-    const codigo = `PED-${Math.floor(100 + Math.random() * 900)}`;
+    const ultimo = Math.max(100, ...this.state.pedidos.map(p => Number(/^PED-(\d+)$/.exec(p.codigo)?.[1] ?? 0)));
+    const codigo = `PED-${ultimo + 1}`;
 
     const nuevoPedido: Pedido = {
       id: nuevoId,
@@ -446,6 +541,7 @@ class AppStore {
       cantidadBidones: datos.cantidadBidones,
       tipoProducto: datos.tipoProducto,
       precioUnitario,
+      recargoDelivery: recargo,
       total,
       estado: 'pendiente_pago',
       medioPago: datos.medioPago,
@@ -460,6 +556,7 @@ class AppStore {
     }
 
     this.state.pedidos.unshift(nuevoPedido);
+    this.registrarActividad(`Nuevo pedido ${codigo} de ${cliente.nombre} (${datos.cantidadBidones} bidones).`, 'panel');
 
     // Actualizar último pedido en cliente para futuro prellenado
     cliente.ultimoPedido = {
@@ -476,6 +573,7 @@ class AppStore {
     const pedido = this.state.pedidos.find(p => p.id === pedidoId);
     if (pedido) {
       pedido.estado = 'pagado';
+      this.registrarActividad(`Pago Webpay confirmado: ${pedido.codigo}.`, 'panel', 'exito');
       this.guardarEnLocalStorage();
     }
   }
@@ -496,6 +594,7 @@ class AppStore {
       this.conmutarSiguienteCuentaBancaria(cta.id);
     }
 
+    this.registrarActividad(`Transferencia validada: ${pedido.codigo}.`, 'panel', 'exito');
     this.guardarEnLocalStorage();
   }
 
@@ -528,15 +627,16 @@ class AppStore {
       throw new Error(`No hay suficientes botellones llenos en bodega central (${this.state.inventario.llenosCentral} disponibles).`);
     }
 
-    // Si el turno anterior ya se liquidó, se abre uno nuevo
+    // Si el turno anterior ya se liquidó, se abre uno nuevo en preparación (carga en bodega)
     if (turno.estado === 'finalizado') {
-      turno.estado = 'en_ruta';
+      turno.estado = 'preparacion';
       turno.fecha = hoyISO();
     }
 
     turno.pedidosIds.push(pedidoId);
     turno.botellonesCargados = nuevaCarga;
     pedido.estado = 'en_despacho';
+    this.registrarActividad(`${pedido.codigo} cargado al furgón (${pedido.cantidadBidones} bidones).`, 'panel');
 
     // Se descuentan de bodega central (llenos) y suben al furgón (en tránsito)
     this.state.inventario.llenosCentral -= pedido.cantidadBidones;
@@ -544,6 +644,16 @@ class AppStore {
   }
 
   // Acciones Chofer (Tarea #49 / PBI 71)
+
+  // El chofer confirma la carga física del furgón y sale de bodega
+  iniciarRuta() {
+    const turno = this.state.turnoActivo;
+    if (turno.estado !== 'preparacion' || turno.pedidosIds.length === 0) return;
+    turno.estado = 'en_ruta';
+    this.registrarActividad(`${turno.choferNombre} confirmó la carga (${turno.botellonesCargados} bidones) e inició la ruta.`, 'chofer', 'exito');
+    this.guardarEnLocalStorage();
+  }
+
   confirmarEntregaChofer(pedidoId: string) {
     const pedido = this.state.pedidos.find(p => p.id === pedidoId);
     if (!pedido) return;
@@ -553,6 +663,7 @@ class AppStore {
     pedido.cantidadEntregada = pedido.cantidadBidones;
     pedido.envasesNoDevueltos = 0;
     if (pedido.incidencia?.tipo === 'ausente') pedido.incidencia.resuelto = true;
+    this.registrarActividad(`Entregado a ${pedido.clienteNombre} (${pedido.codigo}).`, 'chofer', 'exito');
 
     this.sincronizarInventario();
   }
@@ -574,6 +685,7 @@ class AppStore {
 
     // Los vacíos retirados suben al furgón
     this.state.turnoActivo.botellonesCargados += total;
+    if (total > 0) this.registrarActividad(`Retirados ${total} envase(s) pendientes de ${pedido.clienteNombre}.`, 'chofer', 'exito');
     this.sincronizarInventario();
     return total;
   }
@@ -630,6 +742,13 @@ class AppStore {
       turno.botellonesCargados = Math.max(0, turno.botellonesCargados - k);
     }
 
+    const textos = {
+      pendiente: `${pedido.clienteNombre} no devolvió ${pedido.envasesNoDevueltos} envase(s).`,
+      ausente: `Cliente ausente: ${pedido.clienteNombre}. Coordinar regreso.`,
+      roto: `Entrega parcial a ${pedido.clienteNombre}: ${pedido.cantidadEntregada} de ${pedido.cantidadBidones} (botellón roto).`
+    };
+    this.registrarActividad(textos[tipo], 'chofer', tipo === 'pendiente' ? 'alerta' : 'error');
+
     this.sincronizarInventario();
   }
 
@@ -641,6 +760,7 @@ class AppStore {
 
     if (pedido.incidencia) pedido.incidencia.resuelto = true;
 
+    this.registrarActividad(`${pedido.clienteNombre}: reintento ${cuando === 'hoy' ? 'hoy' : 'mañana'}.`, 'panel');
     if (cuando === 'hoy') {
       pedido.estado = 'en_despacho';
       pedido.promesaEntrega = 'Hoy (reintento)';
@@ -663,11 +783,13 @@ class AppStore {
     if (saldo <= 0) return;
 
     original.saldoProgramado = true;
+    this.registrarActividad(`Saldo de ${original.codigo} (${saldo}) agregado a la cola.`, 'panel');
     this.state.pedidos.unshift({
       ...clonar(original),
       id: `ped-${Date.now()}`,
       codigo: `${original.codigo}-S`,
       cantidadBidones: saldo,
+      recargoDelivery: 0,
       total: 0,
       estado: 'pagado',
       fechaCreacion: ahoraISO(),
@@ -684,7 +806,7 @@ class AppStore {
   }
 
   // Liquidación del furgón al retornar a bodega central (descarga de vacíos y cuadratura física)
-  liquidarRetornoFurgonCentral() {
+  liquidarRetornoFurgonCentral(origen: Actividad['origen'] = 'panel') {
     const turno = this.state.turnoActivo;
     const pedidos = this.state.pedidos.filter(p => turno.pedidosIds.includes(p.id));
 
@@ -710,6 +832,7 @@ class AppStore {
     turno.pedidosIds = [];
     turno.estado = 'finalizado';
 
+    this.registrarActividad(`Ruta cerrada en bodega: ${vaciosRecolectados} vacíos y ${llenosNoEntregados} llenos ingresados.`, origen, 'exito');
     this.sincronizarInventario();
     return { vaciosRecolectados, llenosNoEntregados };
   }
@@ -767,6 +890,8 @@ class AppStore {
     this.state.turnoActivo = clonar(turnoActivoInicial);
     this.state.inventario = clonar(inventarioInicial);
     this.state.notificacionRotacion = null;
+    this.state.actividad = [];
+    this.state.stockReferencia = STOCK_REFERENCIA_INICIAL;
     this.sincronizarInventario();
   }
 }
