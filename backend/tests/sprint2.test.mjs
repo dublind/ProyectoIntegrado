@@ -264,9 +264,14 @@ test('PBI 73: sin credenciales de WhatsApp no se gastan intentos y el motivo que
 test('PBI 67/76: retiro pendiente alerta una vez con fecha, pasa a no retornados a los 30 días y se resuelve al retirar', async () => {
   const { c, p } = await newOrder(2);
   await confirm(await register(p));
-  // El turno 1 se cerró en la prueba de despacho; este turno toma los pedidos pagados pendientes
+  // El turno 1 se cerró en la prueba de despacho; este turno toma los pedidos pagados pendientes.
+  // La fecha va después de todos los turnos existentes: una fecha fija chocaba con UNIQUE(fecha, nombre)
+  // el día en que coincidía con el turno sembrado con CURRENT_DATE.
+  const { rows: [{ fecha }] } = await db.query(
+    'SELECT (GREATEST(MAX(fecha), CURRENT_DATE) + 1)::TEXT AS fecha FROM turno',
+  );
   const turn = await call('/turns', 'POST', {
-    fecha: '2026-11-03',
+    fecha,
     nombre: 'Mañana',
     chofer: 'chofer',
     vehiculo_id: 1,

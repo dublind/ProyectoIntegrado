@@ -1,0 +1,36 @@
+PALETA 1:
+Azul Cian Profundo (Color dominante): #0B5E6E (Un azul petróleo oscuro y saturado).
+
+Azul Verdoso Medio (Luces): #2E8B9A (El tono donde la luz incide en la textura).
+
+Turquesa Apagado (Reflejos suaves): #57AAB4 (Un tono más claro y limpio para detalles).
+
+Azul Noche/Casi Negro (Sombras): #041F26 (El color de las grietas y zonas más oscuras).
+
+Verde Oliva Oscuro (Matiz sutil): #1E4A45 (Un tono terroso que aparece en las transiciones de luz y sombra).
+
+
+
+PALETA 2: 
+Azul Noche / Negro (Fondo y sombras): #000000 o #050505 (El color del árbol, la silueta y el fondo de la barra lateral).
+
+Azul Eléctrico (Cielo superior): #0022FF (El tono más intenso del degradado del cielo).
+
+Azul Cian Brillante (Cielo medio): #0077FF (El centro del degradado, donde hay más luz).
+
+Azul Celeste / Hielo (Cielo bajo): #88CCFF (El tono más claro cerca del horizonte).
+
+Blanco (Textos y estrellas): #FFFFFF (Para el logo "AGUA MANTRA", textos y la información nutricional).
+
+PALETA 3: 
+Dorado Cálido (Luz y reflejos): #F2D08A (El tono de los rayos de sol y el pasto iluminado).
+
+Verde Oliva Claro (Fondo natural): #A4B35B (El verde de los árboles desenfocados).
+
+Blanco Roto / Crema (Ropa y luz): #F9F6EE (El tono de la ropa de la mujer).
+
+Marrón Tierra / Bronce (Piel y sombras del pasto): #9C6B43 (El tono cálido de la piel y las zonas de sombra en el suelo).
+
+Verde Azulado Suave (Detalle de la esterilla): #8DB8B2 (El tono de la esterilla de yoga).
+
+TIPOGRAFIA: El tipo de letra de AguaMantra es Playfair Display

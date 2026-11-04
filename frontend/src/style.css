@@ -37,6 +37,28 @@
   --zun-ambar-hover: #d97706;
   --zun-ambar-light: #fffbeb;
 
+  /* 5. MARCA AGUAMANTRA (paletas enviadas por el cliente) */
+  /* Paleta 1: azules petróleo para interacción y detalles */
+  --am-petroleo: #0B5E6E;
+  --am-verdoso: #2E8B9A;
+  --am-turquesa: #57AAB4;
+  --am-noche: #041F26;
+  --am-oliva: #1E4A45;
+  /* Paleta 2: cielo del logo */
+  --am-electrico: #0022FF;
+  --am-cian: #0077FF;
+  --am-hielo: #88CCFF;
+  /* Paleta 3: acentos cálidos */
+  --am-dorado: #F2D08A;
+  --am-crema: #F9F6EE;
+  --am-esterilla: #8DB8B2;
+  --am-cielo: linear-gradient(90deg, var(--am-electrico) 0%, var(--am-cian) 55%, var(--am-hielo) 100%);
+  --font-marca: 'Playfair Display', Georgia, serif;
+
+  /* Acento de interacción (hover, foco, progreso). El rojo queda solo para alertas y errores. */
+  --acento: var(--am-petroleo);
+  --acento-suave: rgba(11, 94, 110, 0.12);
+
   /* Aliases de Compatibilidad */
   --primary: var(--zun-negro);
   --primary-hover: var(--zun-rojo);
@@ -118,7 +140,7 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid var(--zun-rojo) !important;
+  outline: 3px solid var(--am-turquesa) !important;
   outline-offset: 2px !important;
 }
 
@@ -142,7 +164,8 @@ input, select, textarea {
 }
 
 input:focus, select:focus, textarea:focus {
-  border-color: var(--zun-rojo);
+  border-color: var(--acento);
+  box-shadow: 0 0 0 3px var(--acento-suave);
   background-color: #ffffff;
 }
 
@@ -153,7 +176,10 @@ input:focus, select:focus, textarea:focus {
 .badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
+  white-space: nowrap;
+  vertical-align: middle;
   padding: 5px 12px;
   border-radius: var(--radius-pill);
   font-family: var(--font-mono);
@@ -165,7 +191,7 @@ input:focus, select:focus, textarea:focus {
 }
 
 .badge-primary {
-  background: var(--zun-negro);
+  background: var(--am-noche);
   color: var(--zun-blanco);
 }
 
@@ -185,6 +211,36 @@ input:focus, select:focus, textarea:focus {
   background: var(--zun-rojo-light);
   color: #991b1b;
   border: 1px solid rgba(255, 38, 42, 0.3);
+}
+
+/* Variantes sólidas para estados que requieren atención inmediata */
+.badge-alert {
+  background: #facc15;
+  color: #422006;
+  border: 1px solid #eab308;
+  font-weight: 700;
+}
+
+.badge-urgent {
+  background: var(--zun-rojo);
+  color: #ffffff;
+  border: 1px solid var(--zun-rojo);
+  font-weight: 700;
+}
+
+.badge-live {
+  background: var(--zun-verde);
+  color: #ffffff;
+  border: 1px solid var(--zun-verde);
+  font-weight: 700;
+}
+
+/* Programado: planificado en un furgón y día, aún en bodega */
+.badge-plan {
+  background: var(--acento-suave);
+  color: var(--am-petroleo);
+  border: 1px solid rgba(11, 94, 110, 0.35);
+  font-weight: 700;
 }
 
 .badge-neutral {
@@ -218,16 +274,16 @@ input:focus, select:focus, textarea:focus {
 
 /* Botón Primario: Negro sólido con salto y sombra roja en hover */
 .btn-primary {
-  background: var(--zun-negro) !important;
+  background: var(--am-noche) !important;
   color: #ffffff !important;
-  border-color: var(--zun-negro) !important;
+  border-color: var(--am-noche) !important;
 }
 
 .btn-primary:hover {
-  background: var(--zun-negro) !important;
+  background: var(--am-noche) !important;
   color: #ffffff !important;
-  border-color: var(--zun-negro) !important;
-  box-shadow: 3px 3px 0px var(--zun-rojo) !important;
+  border-color: var(--am-noche) !important;
+  box-shadow: 3px 3px 0px var(--am-turquesa) !important;
   transform: translate(-2px, -2px) !important;
 }
 
@@ -253,9 +309,9 @@ input:focus, select:focus, textarea:focus {
 
 .btn-secondary:hover {
   background: #ffffff !important;
-  border-color: var(--zun-rojo) !important;
-  color: var(--zun-rojo) !important;
-  box-shadow: 2px 2px 0px var(--zun-rojo) !important;
+  border-color: var(--acento) !important;
+  color: var(--acento) !important;
+  box-shadow: 2px 2px 0px var(--acento) !important;
   transform: translate(-1px, -1px) !important;
 }
 
@@ -309,8 +365,8 @@ input:focus, select:focus, textarea:focus {
 }
 
 .card-interactive:hover {
-  border-color: var(--zun-rojo) !important;
-  box-shadow: 3px 3px 0px var(--zun-rojo) !important;
+  border-color: var(--acento) !important;
+  box-shadow: 3px 3px 0px var(--acento) !important;
   transform: translate(-2px, -2px) !important;
 }
 
@@ -321,7 +377,7 @@ input:focus, select:focus, textarea:focus {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(17, 17, 17, 0.65);
+  background: rgba(4, 31, 38, 0.62);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
@@ -386,14 +442,19 @@ input:focus, select:focus, textarea:focus {
 }
 
 .btn-close:hover {
-  color: var(--zun-rojo);
-  border-color: var(--zun-rojo);
+  color: var(--acento);
+  border-color: var(--acento);
   background: var(--zun-blanco);
 }
 
 @keyframes modalIn {
   from { opacity: 0; transform: translateY(10px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+::selection {
+  background: var(--am-hielo);
+  color: var(--am-noche);
 }
 
 /* ==========================================================================
@@ -460,3 +521,156 @@ input:focus, select:focus, textarea:focus {
 .mb-4 { margin-bottom: 16px !important; }
 .mb-6 { margin-bottom: 24px !important; }
 .mb-8 { margin-bottom: 32px !important; }
+
+/* ==========================================================================
+   PIEZAS COMPARTIDAS ENTRE VISTAS DEL PANEL
+   ========================================================================== */
+
+.view-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.view-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.view-toolbar .toolbar-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.card-title {
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  font-weight: 800;
+  color: var(--zun-negro);
+  letter-spacing: -0.01em;
+}
+
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.card-sub {
+  font-size: 0.84rem;
+  color: var(--zun-gris);
+  margin-top: 2px;
+}
+
+.empty-box {
+  padding: 26px;
+  background: var(--zun-blanco-sutil);
+  border: 1px dashed var(--zun-border);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  color: var(--zun-gris);
+  font-size: 0.9rem;
+}
+
+.cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.comuna-pill {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--zun-gris-dark);
+  background: var(--zun-blanco-sutil);
+  border: 1px solid var(--zun-border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  display: inline-block;
+  width: fit-content;
+}
+
+.list-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 18px;
+  background: var(--zun-blanco-sutil);
+  border: 1px solid var(--zun-border);
+  border-radius: var(--radius-sm);
+  flex-wrap: wrap;
+}
+
+.list-row .row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.list-row .row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Formularios con error junto al campo (Bug 93) */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.form-group label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--zun-gris-dark);
+}
+
+.form-row {
+  display: flex;
+  gap: 16px;
+}
+
+.form-group.has-error input,
+.form-group.has-error select {
+  border-color: var(--zun-rojo);
+  background: var(--zun-rojo-light);
+}
+
+.field-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #b91c1c;
+}
+
+.field-hint {
+  font-size: 0.76rem;
+  color: var(--zun-gris);
+}
+
+@media (max-width: 640px) {
+  .form-row {
+    flex-direction: column;
+  }
+}
