@@ -13,12 +13,19 @@
         </div>
 
         <template v-if="f.turno?.estado === 'en_ruta'">
-          <div class="fleet-row">
-            <span>A bordo</span>
-            <strong class="font-mono">{{ f.carga.total }} / {{ f.turno.capacidadMax }}</strong>
+          <div class="fleet-body">
+            <!-- El bidón se vacía a medida que el chofer entrega los llenos -->
+            <AguaNivel class="fleet-agua" forma="bidon" animado :nivel="f.carga.llenos / (f.turno.capacidadMax || 1)"
+              :etiqueta="`${f.carga.llenos} bidones llenos a bordo de ${f.turno.capacidadMax}`" />
+            <div class="fleet-datos">
+              <div class="fleet-row">
+                <span>A bordo</span>
+                <strong class="font-mono">{{ f.carga.total }} / {{ f.turno.capacidadMax }}</strong>
+              </div>
+              <CargaFurgonBar :llenos="f.carga.llenos" :vacios="f.carga.vacios" :no-devueltos="f.carga.noDevueltos"
+                :rotos="f.carga.rotos" :capacidad="f.turno.capacidadMax" />
+            </div>
           </div>
-          <CargaFurgonBar :llenos="f.carga.llenos" :vacios="f.carga.vacios" :no-devueltos="f.carga.noDevueltos"
-            :rotos="f.carga.rotos" :capacidad="f.turno.capacidadMax" />
           <div class="fleet-foot">
             <span class="text-sm">{{ f.porVisitar }} de {{ f.paradas }} paradas por visitar</span>
             <div class="toolbar-actions">
@@ -28,12 +35,19 @@
           </div>
         </template>
         <template v-else-if="f.turno?.estado === 'preparacion'">
-          <div class="fleet-row">
-            <span>Planificado para hoy</span>
-            <strong class="font-mono">{{ f.planificado }} / {{ f.turno.capacidadMax }}</strong>
+          <div class="fleet-body">
+            <!-- En bodega el agua está quieta: se llena con lo planificado -->
+            <AguaNivel class="fleet-agua" forma="bidon" :nivel="f.planificado / (f.turno.capacidadMax || 1)"
+              :etiqueta="`${f.planificado} bidones planificados de ${f.turno.capacidadMax}`" />
+            <div class="fleet-datos">
+              <div class="fleet-row">
+                <span>Planificado para hoy</span>
+                <strong class="font-mono">{{ f.planificado }} / {{ f.turno.capacidadMax }}</strong>
+              </div>
+              <div class="plan-bar"><span :style="{ width: `${pct(f.planificado, f.turno.capacidadMax)}%` }"></span></div>
+              <span class="text-xs text-muted">{{ f.paradas }} paradas · el chofer debe confirmar la carga en su app</span>
+            </div>
           </div>
-          <div class="plan-bar"><span :style="{ width: `${pct(f.planificado, f.turno.capacidadMax)}%` }"></span></div>
-          <span class="text-xs text-muted">{{ f.paradas }} paradas · el chofer debe confirmar la carga en su app</span>
         </template>
         <p v-else class="text-sm text-muted">
           {{ f.turno?.estado === 'finalizado' ? 'Ruta de hoy cerrada en bodega.' : `Sin pedidos hoy. Capacidad diaria: ${f.vehiculo.capacidadMax} bidones.` }}
@@ -225,6 +239,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { ChevronLeft, ChevronRight, Clock, MapPin, MapPinned, Truck } from 'lucide-vue-next';
 import CargaFurgonBar from '../../components/CargaFurgonBar.vue';
+import AguaNivel from '../../components/AguaNivel.vue';
 import { appStore } from '../../store/useAppStore';
 import { notificar } from '../../store/useToast';
 import { hoyISO } from '../../utils/formato';
@@ -516,6 +531,25 @@ function liquidar(turnoId: string) {
   font-size: 1rem;
   font-weight: 800;
   color: var(--zun-negro);
+}
+
+.fleet-body {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.fleet-agua {
+  width: 52px;
+  flex-shrink: 0;
+}
+
+.fleet-datos {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .fleet-row {
