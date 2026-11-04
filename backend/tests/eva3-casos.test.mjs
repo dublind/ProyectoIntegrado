@@ -496,10 +496,17 @@ test('CP-18: inyección SQL y XSS se guardan como texto', async () => {
   assert.equal(Number(await value('SELECT COUNT(*)::INT n FROM cliente')), before + 2);
   assert.equal((await call(`/clients/${sql.id_cliente}`)).nombre, "' OR 1=1 --");
   assert.equal((await call(`/clients/${xss.id_cliente}`)).nombre, '<script>alert(1)</script>');
-  // La interfaz no inserta HTML sin escapar
-  const views = path.join(root, 'frontend/src/views');
-  for (const file of await readdir(views)) {
-    assert.doesNotMatch(await readFile(path.join(views, file), 'utf8'), /v-html/);
+  // La interfaz no inserta HTML sin escapar (las vistas están organizadas en subcarpetas)
+  const vistas = async dir => (await Promise.all((await readdir(dir, { withFileTypes: true })).map(e =>
+    e.isDirectory() ? vistas(path.join(dir, e.name)) : e.name.endsWith('.vue') ? [path.join(dir, e.name)] : []))).flat();
+  const archivos = [
+    ...await vistas(path.join(root, 'frontend/src/views')),
+    ...await vistas(path.join(root, 'frontend/src/components')),
+    ...await vistas(path.join(root, 'frontend/src/layouts'))
+  ];
+  assert.ok(archivos.length > 0);
+  for (const file of archivos) {
+    assert.doesNotMatch(await readFile(file, 'utf8'), /v-html/, file);
   }
 });
 
