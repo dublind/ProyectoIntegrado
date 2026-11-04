@@ -114,31 +114,8 @@
             </a>
           </div>
 
-          <!-- Llegada: mientras el GPS diga que está lejos, la parada no se puede cerrar -->
-          <div :class="['arrival', `arrival-${llegada.tono}`]" role="status" aria-live="polite">
-            <span class="arrival-icon"><component :is="llegada.icono" :size="18" /></span>
-            <span class="arrival-text">
-              <strong>{{ llegada.titulo }}</strong>
-              <small>{{ llegada.detalle }}</small>
-            </span>
-            <span v-if="llegada.distancia" class="arrival-dist">{{ llegada.distancia }}</span>
-          </div>
-
-          <div v-if="!llegoAParada" class="arrival-lock">
-            <p class="lock-line"><Lock :size="15" /> Podrás confirmar la entrega al llegar (a menos de {{ RADIO_LLEGADA_M }} m del domicilio).</p>
-            <button v-if="gps.estado.value === 'denegado' || gps.estado.value === 'no_disponible' || gps.estado.value === 'no_soportado'"
-              class="btn btn-secondary btn-sm" @click="gps.reintentar()">
-              <LocateFixed :size="15" /> Reintentar GPS
-            </button>
-            <button v-if="puedePedirValidacion && !siguiente.llegadaManual" class="link-btn" @click="pedirValidacion(siguiente)">
-              <Building2 :size="15" /> Ya estoy aquí y el GPS no funciona · pedir validación a la oficina
-            </button>
-            <p v-else-if="siguiente.llegadaManual?.estado === 'solicitada'" class="note"><Clock :size="16" />
-              <span>Esperando que la oficina valide tu llegada desde el mapa de seguimiento.</span></p>
-          </div>
-
           <!-- Dos confirmaciones separadas: lo que entregó y lo que recibió -->
-          <div v-if="llegoAParada" :class="['confirm-grid', { single: esRetiro(siguiente) }]">
+          <div :class="['confirm-grid', { single: esRetiro(siguiente) }]">
             <div v-if="!esRetiro(siguiente)" :class="['confirm-card', { ok: entregaConfirmada }]">
               <span class="cc-label">Entregué llenos</span>
               <span class="cc-num">{{ siguiente.cantidadBidones }}</span>
@@ -162,27 +139,14 @@
             </div>
           </div>
 
-          <p v-if="llegoAParada && avisoVacios" class="note note-warn"><PackageOpen :size="16" /> <span>{{ avisoVacios }}</span></p>
+          <p v-if="avisoVacios" class="note note-warn"><PackageOpen :size="16" /> <span>{{ avisoVacios }}</span></p>
 
-          <button v-if="llegoAParada" @click="cerrarParada(siguiente)" class="btn btn-success btn-xl" :disabled="!paradaLista">
+          <button @click="cerrarParada(siguiente)" class="btn btn-success btn-xl" :disabled="!paradaLista">
             <Check :size="20" /> {{ textoCierre }}
           </button>
-          <button v-if="llegoAParada" @click="abrirNovedad(siguiente)" class="link-btn">
+          <button @click="abrirNovedad(siguiente)" class="link-btn">
             <AlertTriangle :size="15" /> {{ esRetiro(siguiente) ? 'No pude retirar · reportar novedad' : 'No pude entregar normal · reportar novedad' }}
           </button>
-        </section>
-
-        <!-- Solo desarrollo/demo: simular la ubicación del teléfono (no existe en un build de producción) -->
-        <section v-if="siguiente && gps.simulacionHabilitada" class="block sim-gps" aria-label="Simular ubicación">
-          <h2 class="block-title">Demo · simular ubicación</h2>
-          <div class="sim-buttons">
-            <button class="btn btn-secondary btn-sm" @click="simularA(2000)">Lejos · 2 km</button>
-            <button class="btn btn-secondary btn-sm" @click="simularA(400)">Cerca · 400 m</button>
-            <button class="btn btn-secondary btn-sm" @click="simularA(30)">En la puerta</button>
-            <button class="btn btn-secondary btn-sm" @click="simularA(40, 250)">Señal débil ±250 m</button>
-            <button v-if="gps.simulando.value" class="btn btn-secondary btn-sm" @click="gps.usarGpsReal()">Usar GPS real</button>
-          </div>
-          <small class="sim-hint">Disponible solo en desarrollo o con VITE_GPS_SIMULADO=true.</small>
         </section>
 
         <!-- Ruta completa: volver a bodega -->
@@ -308,14 +272,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import {
-  AlertTriangle, ArrowLeft, Building2, Check, CircleCheck, Clock, DoorClosed, Lock, LocateFixed, Map as MapIcon, MapPin,
-  Navigation, PackageOpen, Phone, Play, SatelliteDish, ShieldAlert, Route, Truck, Warehouse, Wifi, WifiOff
+  AlertTriangle, ArrowLeft, Check, DoorClosed, Map as MapIcon, MapPin, Navigation, PackageOpen, Phone, Play, ShieldAlert,
+  Route, Warehouse, Wifi, WifiOff
 } from 'lucide-vue-next';
-import { useGpsChofer } from '../../composables/useGpsChofer';
-import { formatoDistancia, puntoHacia, RADIO_LLEGADA_M } from '../../utils/llegada';
 import paisaje from '../../assets/aguamantra-paisaje.jpg';
 import { appStore } from '../../store/useAppStore';
 import { notificar } from '../../store/useToast';
@@ -402,69 +364,6 @@ function urlNavegar(p: Pedido) {
 
 const esRetiro = (p: Pedido) => p.tipo === 'retiro';
 
-// ---- Llegada a la parada (GPS) ----
-// El GPS se sigue solo mientras hay una parada en curso
-const gps = useGpsChofer(vehiculoId, computed(() => etapa.value === 'ruta' && !!siguiente.value));
-// Reloj para que una ubicación vieja pase a "vencida" aunque no lleguen lecturas nuevas
-const ahora = ref(Date.now());
-const reloj = setInterval(() => { ahora.value = Date.now(); }, 5000);
-onBeforeUnmount(() => clearInterval(reloj));
-
-const evaluacion = computed(() => {
-  void appStore.state.ubicaciones[vehiculoId.value]; // dependencia reactiva
-  return siguiente.value ? appStore.estadoLlegada(siguiente.value.id, ahora.value) : null;
-});
-const llegoAParada = computed(() => {
-  const p = siguiente.value;
-  if (!p) return false;
-  return p.llegadaManual?.estado === 'autorizada' || evaluacion.value?.estado === 'en_destino';
-});
-// El respaldo de la oficina se ofrece solo cuando el GPS no puede confirmar la llegada
-const puedePedirValidacion = computed(() =>
-  ['denegado', 'no_disponible', 'no_soportado'].includes(gps.estado.value) ||
-  ['precision_baja', 'ubicacion_vencida'].includes(evaluacion.value?.estado ?? ''));
-
-const llegada = computed(() => {
-  const p = siguiente.value;
-  const ev = evaluacion.value;
-  const destino = p ? (esRetiro(p) ? `retiro en ${p.clienteNombre}` : p.clienteNombre) : '';
-  const precision = ev?.precisionM != null ? `GPS ±${Math.round(ev.precisionM)} m` : '';
-  const sim = gps.simulando.value ? ' · simulado' : '';
-  const distancia = ev?.distanciaM != null ? formatoDistancia(ev.distanciaM) : '';
-  if (p?.llegadaManual?.estado === 'autorizada') {
-    return { tono: 'ok', icono: CircleCheck, titulo: `En ${p.clienteNombre}`, detalle: 'Llegada validada por la oficina', distancia: '' };
-  }
-  if (ev?.estado === 'en_destino') {
-    return { tono: 'ok', icono: CircleCheck, titulo: `Llegaste a ${p?.clienteNombre}`, detalle: `${precision}${sim}`, distancia: '' };
-  }
-  if (ev?.estado === 'en_camino') {
-    return { tono: 'route', icono: Truck, titulo: `En camino a ${destino}`, detalle: `${p?.direccion} · ${precision}${sim}`, distancia };
-  }
-  const e = gps.estado.value;
-  if (e === 'denegado') return { tono: 'warn', icono: AlertTriangle, titulo: 'Permiso de ubicación denegado', detalle: 'Actívalo en los ajustes del navegador para confirmar entregas.', distancia: '' };
-  if (e === 'no_soportado') return { tono: 'warn', icono: AlertTriangle, titulo: 'Este navegador no entrega la ubicación', detalle: 'Usa el teléfono con Chrome o Safari y la app por HTTPS.', distancia: '' };
-  if (ev?.estado === 'precision_baja') return { tono: 'warn', icono: SatelliteDish, titulo: 'Señal GPS débil', detalle: `${precision}${sim}: sal a un lugar abierto para validar la llegada.`, distancia };
-  if (ev?.estado === 'ubicacion_vencida') return { tono: 'warn', icono: SatelliteDish, titulo: 'Ubicación desactualizada', detalle: 'Esperando una lectura nueva del GPS…', distancia: '' };
-  if (e === 'no_disponible') return { tono: 'warn', icono: SatelliteDish, titulo: 'GPS sin señal', detalle: 'No se pudo obtener tu posición. Revisa que la ubicación del teléfono esté activa.', distancia: '' };
-  return { tono: 'route', icono: SatelliteDish, titulo: `En camino a ${destino}`, detalle: 'Buscando tu ubicación…', distancia: '' };
-});
-
-// Simulación (demo): ubica el teléfono a cierta distancia de la parada, del lado de la bodega
-function simularA(metros: number, precisionM = 12) {
-  const p = siguiente.value;
-  if (!p?.coords) return;
-  gps.simular(puntoHacia(p.coords, BODEGA_CENTRAL, metros), precisionM);
-}
-
-function pedirValidacion(p: Pedido) {
-  const motivos: Record<string, string> = {
-    denegado: 'permiso de ubicación denegado', no_disponible: 'GPS sin señal', no_soportado: 'navegador sin GPS'
-  };
-  const motivo = motivos[gps.estado.value] ?? (evaluacion.value?.estado === 'precision_baja' ? 'señal GPS imprecisa' : 'ubicación desactualizada');
-  appStore.solicitarValidacionLlegada(p.id, motivo);
-  notificar('Pedido enviado a la oficina. Podrás confirmar cuando valide tu llegada.', 'info', 3500);
-}
-
 // Confirmaciones de la parada actual. Se reinician al pasar a la siguiente parada.
 const entregaConfirmada = ref(false);
 const vaciosConfirmados = ref(false);
@@ -512,7 +411,7 @@ const avisoVacios = computed(() => {
   return '';
 });
 
-const paradaLista = computed(() => llegoAParada.value && vaciosConfirmados.value && (!siguiente.value || esRetiro(siguiente.value) || entregaConfirmada.value));
+const paradaLista = computed(() => vaciosConfirmados.value && (!siguiente.value || esRetiro(siguiente.value) || entregaConfirmada.value));
 
 const textoCierre = computed(() => {
   const p = siguiente.value;
@@ -543,18 +442,13 @@ function iniciar() {
 function cerrarParada(p: Pedido) {
   if (!paradaLista.value) return;
   const recibidos = vaciosRecibidos.value;
-  try {
-    if (esRetiro(p)) {
-      appStore.confirmarEntregaChofer(p.id, recibidos);
-      notificar(`Retiro en ${p.clienteNombre}: ${recibidos} envase(s) recogido(s).`, 'exito', 2800);
-      return;
-    }
-    appStore.confirmarVisitaChofer(p.id, recibidos);
-    notificar(`${p.clienteNombre}: entregaste ${p.cantidadBidones} y recibiste ${recibidos} vacío(s).`, 'exito', 2800);
-  } catch (err) {
-    // La regla de llegada también la valida el store (por ejemplo, si el GPS se alejó justo antes)
-    notificar((err as Error).message, 'error', 5000);
+  if (esRetiro(p)) {
+    appStore.confirmarEntregaChofer(p.id, recibidos);
+    notificar(`Retiro en ${p.clienteNombre}: ${recibidos} envase(s) recogido(s).`, 'exito', 2800);
+    return;
   }
+  appStore.confirmarVisitaChofer(p.id, recibidos);
+  notificar(`${p.clienteNombre}: entregaste ${p.cantidadBidones} y recibiste ${recibidos} vacío(s).`, 'exito', 2800);
 }
 
 const confirmarCierre = ref(false);
@@ -962,130 +856,6 @@ function enviarNovedad() {
 
 .note span {
   flex: 1;
-}
-
-/* Estado de llegada a la parada (GPS) */
-.arrival {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid transparent;
-}
-
-.arrival-icon {
-  flex: none;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-}
-
-.arrival-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.arrival-text strong {
-  font-size: 0.95rem;
-  line-height: 1.25;
-}
-
-.arrival-text small {
-  font-size: 0.78rem;
-  opacity: 0.85;
-  overflow-wrap: anywhere;
-}
-
-.arrival-dist {
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: 1.05rem;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.arrival-route {
-  background: var(--acento-suave);
-  border-color: var(--am-turquesa);
-  color: var(--am-noche);
-}
-
-.arrival-route .arrival-icon {
-  background: var(--am-petroleo);
-  color: #ffffff;
-  animation: arrival-pulse 1.8s ease-in-out infinite;
-}
-
-.arrival-ok {
-  background: var(--zun-verde-light);
-  border-color: var(--zun-verde);
-  color: var(--zun-text);
-}
-
-.arrival-ok .arrival-icon {
-  background: var(--zun-verde);
-  color: #ffffff;
-}
-
-.arrival-warn {
-  background: #fef9c3;
-  border-color: #facc15;
-  color: #422006;
-}
-
-.arrival-warn .arrival-icon {
-  background: #facc15;
-  color: #422006;
-}
-
-@keyframes arrival-pulse {
-  50% { box-shadow: 0 0 0 6px rgba(11, 94, 110, 0.18); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .arrival-route .arrival-icon { animation: none; }
-}
-
-.arrival-lock {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
-  padding: 14px;
-  border: 1.5px dashed var(--zun-border);
-  border-radius: 12px;
-}
-
-.lock-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.86rem;
-  color: var(--zun-gris-dark);
-}
-
-.sim-gps {
-  padding: 12px 14px;
-  border: 1.5px dashed var(--am-esterilla);
-  border-radius: 12px;
-  background: var(--am-crema);
-}
-
-.sim-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.sim-hint {
-  font-size: 0.74rem;
-  color: var(--zun-gris);
 }
 
 .note-warn {

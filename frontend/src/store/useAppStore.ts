@@ -1,12 +1,10 @@
 import { reactive, computed } from 'vue';
-import type { Actividad, Cliente, Pedido, Vehiculo, TurnoDespacho, CuentaBancaria, InventarioBodega, MedioPago, RegistroEnvase, UbicacionChofer } from '../types';
+import type { Actividad, Cliente, Pedido, Vehiculo, TurnoDespacho, CuentaBancaria, InventarioBodega, MedioPago, RegistroEnvase } from '../types';
 import { BODEGA_CENTRAL, geocodificarSimulado, ordenarRutaLocal } from '../utils/geo';
 import { optimizarOrden } from '../utils/rutas';
 import { ahoraISO, diasDesde, hoyISO } from '../utils/formato';
 import { normalizarTelefono } from '../utils/validacion';
 import { recargoDelivery } from '../utils/comunas';
-import { evaluarLlegada, formatoDistancia, GPS_SIMULACION_HABILITADA, PRECISION_MAXIMA_M } from '../utils/llegada';
-import type { EvaluacionLlegada } from '../utils/llegada';
 
 const STORAGE_KEY = 'agua_purificada_mvp_store_v5'; // v5: demo sin pedidos duplicados de versiones anteriores
 
@@ -303,8 +301,6 @@ class AppStore {
     turnos: clonar(turnosIniciales),
     inventario: clonar(inventarioInicial),
     modoOffline: false,
-    // Última posición GPS informada por la app del chofer, por furgón (la ve el mapa de seguimiento)
-    ubicaciones: {} as Record<string, UbicacionChofer>,
     actividad: [] as Actividad[],
     // Envases que existen físicamente desde el inicio (stock total + bajas). Sirve para auditar la cuadratura.
     stockReferencia: STOCK_REFERENCIA_INICIAL,
@@ -846,82 +842,6 @@ class AppStore {
   // Acciones del chofer (Tarea #49 / PBI 71)
   // ==========================================================================
 
-  // --------------------------------------------------------------------------
-  // Llegada a la parada (GPS del chofer)
-  // --------------------------------------------------------------------------
-
-  // El teléfono del chofer informa su posición. Las simuladas solo se aceptan en desarrollo/demo.
-  reportarUbicacionChofer(vehiculoId: string, ubicacion: UbicacionChofer) {
-    if (!this.vehiculo(vehiculoId)) return;
-    if (ubicacion.fuente === 'simulada' && !GPS_SIMULACION_HABILITADA) {
-      throw new Error('La ubicación simulada no está permitida en esta versión.');
-    }
-    if (![ubicacion.lat, ubicacion.lng, ubicacion.precisionM].every(Number.isFinite)) return;
-    this.state.ubicaciones[vehiculoId] = { ...ubicacion };
-    this.guardarEnLocalStorage();
-  }
-
-  ubicacionDe(vehiculoId: string): UbicacionChofer | undefined {
-    return this.state.ubicaciones[vehiculoId];
-  }
-
-  // Estado "en camino / en destino" de una parada según el GPS del furgón que la lleva
-  estadoLlegada(pedidoId: string, ahora = Date.now()): EvaluacionLlegada {
-    const pedido = this.state.pedidos.find(p => p.id === pedidoId);
-    const turno = this.turnoDePedido(pedidoId);
-    if (!pedido || !turno) return { estado: 'sin_ubicacion', distanciaM: null, precisionM: null };
-    const destino = pedido.coords ?? geocodificarSimulado(pedido.direccion, pedido.comuna);
-    return evaluarLlegada(this.ubicacionDe(turno.vehiculoId), destino, ahora);
-  }
-
-  // Llegada validada: por GPS dentro del radio, o autorizada por la oficina (respaldo)
-  llegadaValidada(pedidoId: string) {
-    const pedido = this.state.pedidos.find(p => p.id === pedidoId);
-    if (!pedido) return false;
-    return pedido.llegadaManual?.estado === 'autorizada' || this.estadoLlegada(pedidoId).estado === 'en_destino';
-  }
-
-  // Regla de negocio: no se cierra una parada (entrega, retiro o novedad) sin haber llegado
-  private exigirLlegada(pedido: Pedido) {
-    if (this.llegadaValidada(pedido.id)) return;
-    const ev = this.estadoLlegada(pedido.id);
-    const mensajes: Record<string, string> = {
-      sin_ubicacion: 'No hay ubicación GPS del furgón. Activa la ubicación o pide a la oficina que valide la llegada.',
-      ubicacion_vencida: 'La ubicación GPS está desactualizada. Espera una nueva lectura o pide a la oficina que valide la llegada.',
-      precision_baja: `La señal GPS es imprecisa (±${Math.round(ev.precisionM ?? 0)} m, se necesita ±${PRECISION_MAXIMA_M} m o menos).`,
-      en_camino: `Aún no llegas a ${pedido.clienteNombre}${ev.distanciaM !== null ? ` (faltan ${formatoDistancia(ev.distanciaM)})` : ''}.`
-    };
-    throw new Error(mensajes[ev.estado] ?? 'Aún no llegas a la parada.');
-  }
-
-  // Respaldo si el GPS no funciona: el chofer pide que la oficina valide su llegada
-  solicitarValidacionLlegada(pedidoId: string, motivo: string) {
-    const pedido = this.state.pedidos.find(p => p.id === pedidoId);
-    if (!pedido || pedido.estado !== 'en_despacho') return;
-    if (pedido.llegadaManual) return;
-    pedido.llegadaManual = { estado: 'solicitada', motivo, solicitadaEn: ahoraISO() };
-    this.registrarActividad(`${pedido.codigo}: el chofer pide validar su llegada a ${pedido.clienteNombre} (${motivo}).`, 'chofer', 'alerta');
-    this.guardarEnLocalStorage();
-  }
-
-  // Solo la oficina (panel) autoriza la llegada manual; queda registrada en la actividad
-  autorizarLlegadaManual(pedidoId: string) {
-    const pedido = this.state.pedidos.find(p => p.id === pedidoId);
-    if (!pedido || pedido.estado !== 'en_despacho' || pedido.llegadaManual?.estado !== 'solicitada') return;
-    pedido.llegadaManual.estado = 'autorizada';
-    pedido.llegadaManual.autorizadaEn = ahoraISO();
-    this.registrarActividad(`Oficina validó la llegada a ${pedido.clienteNombre} (${pedido.codigo}) sin GPS.`, 'panel', 'alerta');
-    this.guardarEnLocalStorage();
-  }
-
-  rechazarLlegadaManual(pedidoId: string) {
-    const pedido = this.state.pedidos.find(p => p.id === pedidoId);
-    if (!pedido || pedido.llegadaManual?.estado !== 'solicitada') return;
-    pedido.llegadaManual = undefined;
-    this.registrarActividad(`Oficina rechazó validar la llegada a ${pedido.clienteNombre} (${pedido.codigo}).`, 'panel', 'info');
-    this.guardarEnLocalStorage();
-  }
-
   // El chofer confirma la carga física: los llenos salen de bodega y suben al furgón
   iniciarRuta(turnoId: string) {
     const turno = this.state.turnos.find(t => t.id === turnoId);
@@ -946,7 +866,6 @@ class AppStore {
   confirmarEntregaChofer(pedidoId: string, retirados?: number) {
     const pedido = this.state.pedidos.find(p => p.id === pedidoId);
     if (!pedido) return;
-    this.exigirLlegada(pedido);
 
     if (esRetiro(pedido)) {
       const n = this.registrarRetiroChofer(pedidoId, retirados ?? pedido.retiroEnvases);
@@ -978,7 +897,6 @@ class AppStore {
   confirmarVisitaChofer(pedidoId: string, vaciosRecibidos: number) {
     const pedido = this.state.pedidos.find(p => p.id === pedidoId);
     if (!pedido || esRetiro(pedido)) return;
-    this.exigirLlegada(pedido);
     const cantidad = pedido.cantidadBidones;
     const maximo = cantidad + this.retirosPendientesCliente(pedido.clienteId);
     const recibidos = Math.min(Math.max(0, Math.round(vaciosRecibidos)), maximo);
@@ -1112,7 +1030,6 @@ class AppStore {
     const pedido = this.state.pedidos.find(p => p.id === pedidoId);
     const turno = this.turnoDePedido(pedidoId);
     if (!pedido || !turno) return;
-    this.exigirLlegada(pedido);
 
     if (tipo === 'roto' && !opciones.aceptacionCliente) {
       throw new Error('La entrega parcial requiere informar al cliente y registrar su aceptación.');
@@ -1172,8 +1089,6 @@ class AppStore {
     if (!pedido || !turno || pedido.estado !== 'ausente') return;
 
     if (pedido.incidencia) pedido.incidencia.resuelto = true;
-    // El reintento es otra visita: la validación manual de la llegada anterior ya no vale
-    pedido.llegadaManual = undefined;
 
     this.registrarActividad(`${pedido.clienteNombre}: reintento ${cuando === 'hoy' ? 'hoy' : 'en otro día'}.`, 'panel');
     if (cuando === 'hoy') {
@@ -1296,7 +1211,6 @@ class AppStore {
     this.state.turnos = clonar(turnosIniciales);
     this.state.inventario = clonar(inventarioInicial);
     this.state.actividad = [];
-    this.state.ubicaciones = {};
     this.state.stockReferencia = STOCK_REFERENCIA_INICIAL;
     this.sincronizarInventario();
   }

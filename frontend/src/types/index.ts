@@ -15,15 +15,6 @@ export interface Coordenadas {
   lng: number;
 }
 
-// Última posición informada por el teléfono del chofer (una por furgón)
-export interface UbicacionChofer {
-  lat: number;
-  lng: number;
-  precisionM: number; // radio de incertidumbre que informa el GPS (metros)
-  fecha: string; // ISO: momento en que el GPS tomó la posición
-  fuente: 'gps' | 'simulada'; // simulada: solo en desarrollo o con VITE_GPS_SIMULADO=true
-}
-
 export interface Cliente {
   id: string;
   nombre: string;
@@ -71,13 +62,6 @@ export interface Pedido {
   aceptacionParcial?: boolean;
   saldoProgramado?: boolean; // el saldo de un parcial ya se envió al turno siguiente
   pedidoOrigenCodigo?: string; // si es saldo de un parcial, código del pedido original
-  // Respaldo cuando el GPS no sirve: el chofer pide y la oficina valida la llegada (queda en la actividad)
-  llegadaManual?: {
-    estado: 'solicitada' | 'autorizada';
-    motivo: string;
-    solicitadaEn: string;
-    autorizadaEn?: string;
-  };
   incidencia?: {
     tipo: 'pendiente' | 'ausente' | 'roto';
     detalle: string;
