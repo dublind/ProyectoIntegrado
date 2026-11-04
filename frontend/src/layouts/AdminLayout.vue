@@ -60,16 +60,6 @@
         </RouterLink>
       </header>
 
-      <!-- Alerta global de rotación de cuenta -->
-      <div v-if="appStore.state.notificacionRotacion" class="alert-banner" role="alert">
-        <RefreshCw :size="18" />
-        <div class="alert-text">
-          <strong>Conmutación automática de cuenta bancaria (regla de 45 comprobantes)</strong>
-          <p>{{ appStore.state.notificacionRotacion }}</p>
-        </div>
-        <button @click="appStore.state.notificacionRotacion = null" class="btn-close" aria-label="Cerrar aviso">&times;</button>
-      </div>
-
       <main class="workspace">
         <FlujoDelDia class="flujo-bar" />
         <RouterView v-slot="{ Component }">
@@ -86,7 +76,7 @@
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
 import logoMarca from '../assets/aguamantra-marca.jpg';
-import { ClipboardList, LayoutDashboard, MapPinned, RefreshCw, Smartphone, Truck, Warehouse } from 'lucide-vue-next';
+import { ClipboardList, LayoutDashboard, MapPinned, Smartphone, Truck, Warehouse } from 'lucide-vue-next';
 import FlujoDelDia from '../components/FlujoDelDia.vue';
 import { appStore } from '../store/useAppStore';
 import { notificar } from '../store/useToast';
@@ -103,12 +93,12 @@ appStore.alRecibirActividadRemota(nuevas => {
 const pedidosPorCobrar = computed(() => appStore.state.pedidos.filter(p => p.estado === 'pendiente_pago').length);
 const pedidosPorDespachar = computed(() => appStore.state.pedidos.filter(p => p.estado === 'pagado').length);
 const alertasInventario = computed(() => appStore.registrosPendientes.value.length);
-const paradasPendientes = computed(() => appStore.pedidosDespachoActivo.value.filter(p => p.estado === 'en_despacho').length);
+const paradasPendientes = computed(() => appStore.paradasDeHoy.value.filter(p => p.estado === 'en_despacho' || p.estado === 'programado').length);
 
 const navItems = [
   { to: '/indicadores', label: 'Indicadores', icon: LayoutDashboard },
   { to: '/pedidos', label: 'Pedidos', icon: ClipboardList, badge: pedidosPorCobrar, badgeClass: 'badge-warn' },
-  { to: '/despacho', label: 'Despacho', icon: Truck, badge: pedidosPorDespachar, badgeClass: '' },
+  { to: '/despacho', label: 'Planificación', icon: Truck, badge: pedidosPorDespachar, badgeClass: '' },
   { to: '/inventario', label: 'Inventario', icon: Warehouse, badge: alertasInventario, badgeClass: 'badge-warn' },
   { to: '/seguimiento', label: 'Seguimiento', icon: MapPinned }
 ];

@@ -24,7 +24,7 @@ const routes = [
         path: 'despacho',
         name: 'Despacho',
         component: () => import('../views/admin/DespachoView.vue'),
-        meta: { title: 'Despacho y furgones', descripcion: 'Carga del turno, ausencias y saldos' }
+        meta: { title: 'Planificación y despacho', descripcion: 'Calendario por furgón y día, carga en vivo y novedades' }
       },
       {
         path: 'inventario',
@@ -59,7 +59,15 @@ const routes = [
 
 const router = createRouter({
   history: createWebHistory(),
-  routes
+  routes,
+  // Los enlaces con sección (ej: /despacho#hoy) bajan hasta ella; se espera a que la vista termine de montarse
+  scrollBehavior(to, from) {
+    if (to.hash) {
+      const espera = to.path === from.path ? 0 : 350;
+      return new Promise(resolve => setTimeout(() => resolve({ el: to.hash, top: 110, behavior: 'smooth' }), espera));
+    }
+    return { top: 0 };
+  }
 });
 
 router.afterEach((to) => {

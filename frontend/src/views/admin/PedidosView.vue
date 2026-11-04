@@ -50,7 +50,10 @@
                 <span class="comuna-pill">{{ p.comuna }}</span>
               </div>
             </td>
-            <td data-label="Bidones"><span class="badge badge-neutral">{{ p.cantidadBidones }} x 20L</span></td>
+            <td data-label="Bidones">
+              <span v-if="p.tipo === 'retiro'" class="badge badge-alert">Retiro {{ p.retiroEnvases }} vacío(s)</span>
+              <span v-else class="badge badge-neutral">{{ p.cantidadBidones }} x 20L</span>
+            </td>
             <td data-label="Pago">
               <div class="cell-stack">
                 <span class="font-semibold">{{ p.medioPago === 'webpay' ? 'Webpay Plus' : 'Transferencia' }}</span>
@@ -58,7 +61,7 @@
               </div>
             </td>
             <td class="font-mono font-bold" data-label="Total">
-              {{ p.total === 0 && p.pedidoOrigenCodigo ? 'Pagado' : formatCLP(p.total) }}
+              {{ p.tipo === 'retiro' ? 'Sin cobro' : p.total === 0 && p.pedidoOrigenCodigo ? 'Pagado' : formatCLP(p.total) }}
             </td>
             <td data-label="Estado">
               <span :class="['badge', getBadgeClass(p.estado)]">{{ formatEstado(p.estado) }}</span>
@@ -75,7 +78,7 @@
                   </button>
                 </template>
                 <button v-if="p.estado === 'pagado'" @click="asignarDespacho(p)" class="btn btn-primary btn-sm">
-                  Asignar a ruta
+                  Asignar hoy
                 </button>
                 <button @click="pedidoDetalle = p" class="btn btn-secondary btn-sm" aria-label="Ver detalle">
                   <Eye :size="15" />
@@ -105,10 +108,8 @@
             <strong>{{ formatCLP(modalTransferenciaPedido.total) }}</strong>
           </p>
           <div class="current-bank-box mb-4">
-            <span class="label">Cuenta de abono activa</span>
+            <span class="label">Cuenta de abono</span>
             <strong>{{ appStore.cuentaActiva.value.banco }} ({{ appStore.cuentaActiva.value.numeroCuenta }})</strong>
-            <p class="text-xs text-muted">Contador actual: {{ appStore.cuentaActiva.value.comprobantesProcesados }}/45
-              transferencias</p>
           </div>
           <div class="form-group">
             <label for="comprobante">Comprobante recibido</label>
@@ -177,7 +178,7 @@ import { notificar } from '../../store/useToast';
 import { formatCLP, formatEstado, formatEstadoLabel, getBadgeClass } from '../../utils/formato';
 import type { Pedido } from '../../types';
 
-const estadosFiltro = ['todos', 'pendiente_pago', 'pagado', 'en_despacho', 'entregado'];
+const estadosFiltro = ['todos', 'pendiente_pago', 'pagado', 'programado', 'en_despacho', 'entregado'];
 
 const filtroBusqueda = ref('');
 const filtroEstado = ref('todos');
@@ -230,8 +231,8 @@ function confirmarTransferencia() {
 
 function asignarDespacho(p: Pedido) {
   try {
-    appStore.asignarPedidoADespacho(p.id);
-    notificar(`${p.codigo} asignado al furgón activo.`, 'exito');
+    const v = appStore.asignarPedidoADespacho(p.id);
+    notificar(`${p.codigo} planificado para hoy en ${v.modelo.replace(/\s*\(.*\)$/, '')}.`, 'exito');
   } catch (err) {
     notificar((err as Error).message, 'error', 6000);
   }

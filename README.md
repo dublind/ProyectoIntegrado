@@ -32,14 +32,14 @@ Sistema para coordinar la venta y el reparto de bidones de agua purificada de 20
   * **Panel administrativo** (`/`): navegación lateral (barra inferior en móvil).
     * *Indicadores:* pedidos del día, entregas, pendientes y stock, solo con datos registrados.
     * *Pedidos y ventas:* búsqueda, prellenado automático, validación junto a cada campo, alertas de envases y cobros.
-    * *Despacho y furgones:* capacidad por vehículo ($N_{\max}$), cola de asignación, ausencias a reprogramar y saldos de parciales.
-    * *Bodegas e inventario:* cuadratura continua, envases pendientes con antigüedad (30/60 días), bodega de rotos y rotación bancaria a los **45 comprobantes**.
+    * *Planificación y despacho:* calendario semanal por furgón y día con arrastrar y soltar, capacidad diaria por vehículo ($N_{\max}$), carga en vivo de cada furgón (llenos y vacíos), ausencias y saldos de parciales.
+    * *Bodegas e inventario:* cuadratura continua, envases pendientes con antigüedad (30/60 días), bodega de rotos y cuenta única para transferencias.
     * *Seguimiento:* mapa con furgones en ruta (simulación) sobre Google Maps u OpenStreetMap.
   * **App del chofer** (`/chofer`): paradas en orden geográfico, entrega en 1 toque, retiros pendientes, ausencias y entregas parciales con aceptación del cliente.
 * **Backend y base de datos (planificado):** Supabase (PostgreSQL, Row Level Security, Edge Functions).
 * **Integraciones:**
   * *Pagos digitales:* Webpay Plus de Transbank (confirmación automática).
-  * *Transferencias bancarias:* Carga manual con conmutación automática de cuentas al acumular **45 comprobantes procesados**.
+  * *Transferencias bancarias:* Validación manual del comprobante, abonado a la cuenta única de la empresa.
   * *Notificaciones:* WhatsApp Business Platform / avisos operativos.
   * *Mapas:* Google Maps Platform (Maps JavaScript API), con OpenStreetMap como respaldo si no hay API key.
 

@@ -39,7 +39,7 @@
       <div>
         <h2 class="card-title">Pedidos de prueba</h2>
         <p class="card-sub">Crea compras ficticias con las mismas acciones de la app: ~25% queda por cobrar, el resto se
-          paga y se carga al furgón mientras haya capacidad.</p>
+          paga y queda por planificar: la asignación a furgón y día la haces tú en Planificación.</p>
       </div>
       <div class="demo-actions">
         <select v-model.number="cantidadDemo" aria-label="Cantidad de pedidos de prueba">
@@ -62,10 +62,16 @@
         <span class="block-label">Total físico en bodega</span>
         <div class="block-value">{{ totalFisicoBodega }}<span class="unit">llenos + vacíos + rotos</span></div>
       </section>
+      <!-- Se mueve con cada entrega: baja un lleno y sube un vacío -->
       <section class="card stock-block">
-        <span class="block-label">En el furgón</span>
-        <div class="block-value">{{ carga.total }}<span class="unit">{{ carga.llenos }} llenos por entregar · {{ carga.vacios }}
-            vacíos recogidos</span></div>
+        <span class="block-label">En furgones (en vivo)</span>
+        <div class="block-value">{{ carga.total }}<span class="unit">envases a bordo · {{ entregadosHoy }} bidones entregados
+            hoy</span></div>
+        <CargaFurgonBar :llenos="carga.llenos" :vacios="carga.vacios" :no-devueltos="carga.noDevueltos" :rotos="carga.rotos" />
+        <div v-for="f in furgonesEnRuta" :key="f.id" class="mini-furgon">
+          <span>{{ f.nombre }}</span>
+          <span class="font-mono">{{ f.carga.llenos }} llenos · {{ f.carga.vacios }} vacíos</span>
+        </div>
       </section>
       <section class="card stock-block">
         <span class="block-label">En clientes</span>
@@ -87,7 +93,8 @@
         <span class="eq-op">+</span>
         <div class="eq-item"><span class="eq-num text-success">{{ inv.vaciosCentral }}</span><span class="eq-lbl">Vacíos</span></div>
         <span class="eq-op">+</span>
-        <div class="eq-item"><span class="eq-num">{{ inv.enTransito }}</span><span class="eq-lbl">En furgón</span></div>
+        <div class="eq-item"><span class="eq-num">{{ inv.enTransito }}</span><span class="eq-lbl">En furgones</span>
+          <span class="eq-det">{{ carga.llenos }} ll · {{ carga.vacios }} va</span></div>
         <span class="eq-op">+</span>
         <div class="eq-item"><span class="eq-num text-warning">{{ inv.pendientesDevolucion }}</span><span class="eq-lbl">Pendientes</span></div>
         <span class="eq-op">+</span>
@@ -114,7 +121,8 @@
       <div class="card-head">
         <div>
           <h2 class="card-title">Envases pendientes de devolución</h2>
-          <p class="card-sub">A los 30 días pasan a no retornados; a los 60, solo el administrador puede darlos de baja.</p>
+          <p class="card-sub">A los 30 días pasan a no retornados; a los 60, solo el administrador puede darlos de baja.
+            "Programar retiro" crea una parada solo de retiro para planificarla en el calendario.</p>
         </div>
         <div class="legend">
           <span class="badge badge-warning">Pendiente</span>
@@ -145,7 +153,11 @@
                 <span v-else-if="r.dias >= 30" class="badge badge-danger">No retornó</span>
                 <span v-else class="badge badge-warning">Pendiente</span>
               </td>
-              <td class="cell-right">
+              <td class="cell-right acciones-envase">
+                <span v-if="retiroDe(r.clienteId)" class="badge badge-plan" :title="`Estado: ${estadoRetiro(r.clienteId)}`">
+                  {{ retiroDe(r.clienteId)!.codigo }} · {{ estadoRetiro(r.clienteId) }}
+                </span>
+                <button v-else @click="programarRetiro(r.clienteId)" class="btn btn-secondary btn-sm">Programar retiro</button>
                 <button v-if="r.dias >= 60" @click="registroBaja = r" class="btn btn-danger-outline btn-sm">Dar de baja</button>
               </td>
             </tr>
@@ -169,30 +181,21 @@
       </details>
     </section>
 
-    <!-- Cuentas bancarias -->
+    <!-- Cuenta única de depósito para transferencias -->
     <section class="card">
       <div class="card-head">
         <div>
-          <h2 class="card-title">Cuentas bancarias de transferencias</h2>
-          <p class="card-sub">Al acumular 45 comprobantes se conmuta automáticamente a la siguiente cuenta.</p>
+          <h2 class="card-title">Cuenta para transferencias</h2>
+          <p class="card-sub">Todas las transferencias se abonan a la cuenta de la empresa.</p>
         </div>
-        <span class="badge badge-primary">Regla activa</span>
       </div>
-      <div class="list-rows">
-        <div v-for="cta in appStore.state.cuentasBancarias" :key="cta.id" :class="['list-row', { 'is-active-account': cta.activa }]">
-          <div class="row-main">
-            <span class="acc-title">
-              <strong>{{ cta.banco }}</strong>
-              <span v-if="cta.activa" class="badge badge-success">Activa</span>
-              <span v-else class="badge badge-neutral">En espera</span>
-            </span>
-            <span class="text-sm font-mono text-muted">{{ cta.tipoCuenta }} · {{ cta.numeroCuenta }}</span>
-          </div>
-          <div class="acc-counter">
-            <div class="counter-label"><span>Comprobantes</span><strong>{{ cta.comprobantesProcesados }} / 45</strong></div>
-            <div class="counter-bar"><div class="counter-fill" :style="{ width: `${(cta.comprobantesProcesados / 45) * 100}%` }"></div></div>
-          </div>
+      <div class="list-row is-active-account">
+        <div class="row-main">
+          <strong>{{ appStore.cuentaActiva.value.banco }}</strong>
+          <span class="text-sm font-mono text-muted">{{ appStore.cuentaActiva.value.tipoCuenta }} · {{
+            appStore.cuentaActiva.value.numeroCuenta }} · RUT {{ appStore.cuentaActiva.value.rut }}</span>
         </div>
+        <span class="text-sm text-muted">{{ appStore.cuentaActiva.value.titular }}</span>
       </div>
     </section>
 
@@ -240,13 +243,25 @@
 import { computed, ref } from 'vue';
 import { CircleCheck, CircleX, RefreshCw, RotateCcw, ShieldAlert, ShieldCheck, Sparkles } from 'lucide-vue-next';
 import { generarPedidosDemo } from '../../store/demo';
+import CargaFurgonBar from '../../components/CargaFurgonBar.vue';
 import { appStore } from '../../store/useAppStore';
 import { notificar } from '../../store/useToast';
 import { formatFechaCorta } from '../../utils/formato';
 import type { RegistroEnvase } from '../../types';
 
 const inv = computed(() => appStore.state.inventario);
-const carga = computed(() => appStore.cargaFurgon.value);
+const carga = computed(() => appStore.cargaFurgones.value);
+const furgonesEnRuta = computed(() => appStore.state.turnos
+  .filter(t => t.estado === 'en_ruta')
+  .map(t => ({
+    id: t.id,
+    nombre: appStore.vehiculo(t.vehiculoId)?.modelo.replace(/\s*\(.*\)$/, '') ?? t.vehiculoId,
+    carga: appStore.cargaDeTurno(t)
+  })));
+// Bidones efectivamente entregados hoy (cambia con cada confirmación del chofer)
+const entregadosHoy = computed(() => appStore.paradasDeHoy.value
+  .filter(p => p.estado === 'entregado' || p.estado === 'parcial')
+  .reduce((acc, p) => acc + (p.cantidadEntregada ?? p.cantidadBidones), 0));
 const auditoria = computed(() => appStore.auditoria.value);
 const horaActualizacion = computed(() => {
   const t = appStore.state.actualizadoEn;
@@ -255,9 +270,27 @@ const horaActualizacion = computed(() => {
 
 const cantidadDemo = ref(20);
 
+// Retiros de envases pendientes (parada solo de retiro, sin pedido nuevo)
+const retiroDe = (clienteId: string) => appStore.retiroAbierto(clienteId);
+const ETIQUETA_RETIRO: Record<string, string> = {
+  pagado: 'por planificar', programado: 'programado', en_despacho: 'en ruta', ausente: 'cliente ausente'
+};
+function estadoRetiro(clienteId: string) {
+  const r = retiroDe(clienteId);
+  return r ? ETIQUETA_RETIRO[r.estado] ?? r.estado : '';
+}
+function programarRetiro(clienteId: string) {
+  try {
+    const codigo = appStore.programarRetiro(clienteId);
+    notificar(`${codigo} creado: queda por planificar en el calendario.`, 'exito', 4500);
+  } catch (err) {
+    notificar((err as Error).message, 'error');
+  }
+}
+
 function generarDemo() {
   const r = generarPedidosDemo(cantidadDemo.value);
-  notificar(`${r.creados} pedidos creados: ${r.pagados} pagados, ${r.asignados} cargados al furgón${r.sinCupo ? `, ${r.sinCupo} esperan cupo` : ''}.`, 'exito', 6000);
+  notificar(`${r.creados} pedidos creados: ${r.pagados} pagados quedan por planificar y ${r.creados - r.pagados} por cobrar.`, 'exito', 6000);
 }
 const totalFisicoBodega = computed(() => inv.value.llenosCentral + inv.value.vaciosCentral + inv.value.rotosBodega);
 const historial = computed(() => appStore.state.registrosEnvases.filter(r => r.estado !== 'pendiente').slice().reverse());
@@ -365,6 +398,20 @@ function reset() {
   font-weight: 800;
 }
 
+.eq-det {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--am-petroleo);
+}
+
+.mini-furgon {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.74rem;
+  color: var(--zun-gris-dark);
+}
+
 .eq-lbl {
   font-size: 0.72rem;
   color: var(--zun-gris);
@@ -423,6 +470,13 @@ function reset() {
   padding: 12px;
   border-bottom: 1px solid var(--zun-border);
   white-space: nowrap;
+}
+
+.acciones-envase {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  align-items: center;
 }
 
 .cell-right {

@@ -235,6 +235,14 @@ input:focus, select:focus, textarea:focus {
   font-weight: 700;
 }
 
+/* Programado: planificado en un furgón y día, aún en bodega */
+.badge-plan {
+  background: var(--acento-suave);
+  color: var(--am-petroleo);
+  border: 1px solid rgba(11, 94, 110, 0.35);
+  font-weight: 700;
+}
+
 .badge-neutral {
   background: var(--zun-blanco-sutil);
   color: var(--zun-gris-dark);

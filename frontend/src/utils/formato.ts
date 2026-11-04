@@ -4,8 +4,9 @@ export function formatEstadoLabel(estado: string) {
   const map: Record<string, string> = {
     todos: 'Todos',
     pendiente_pago: 'Pendiente pago',
-    pagado: 'Pagados',
-    en_despacho: 'En despacho',
+    pagado: 'Por planificar',
+    programado: 'Programados',
+    en_despacho: 'En ruta',
     entregado: 'Entregados'
   };
   return map[estado] || estado;
@@ -14,8 +15,9 @@ export function formatEstadoLabel(estado: string) {
 export function formatEstado(estado: string) {
   const map: Record<string, string> = {
     pendiente_pago: 'Pendiente pago',
-    pagado: 'Pagado',
-    en_despacho: 'En despacho',
+    pagado: 'Pagado · por planificar',
+    programado: 'Programado',
+    en_despacho: 'En ruta',
     entregado: 'Entregado',
     parcial: 'Entrega parcial',
     ausente: 'Cliente ausente',
@@ -28,6 +30,7 @@ export function getBadgeClass(estado: string) {
   const map: Record<string, string> = {
     pendiente_pago: 'badge-urgent',
     pagado: 'badge-primary',
+    programado: 'badge-plan',
     en_despacho: 'badge-live',
     entregado: 'badge-success',
     parcial: 'badge-alert',
@@ -38,6 +41,7 @@ export function getBadgeClass(estado: string) {
 
 export function formatEstadoStop(estado: string) {
   const map: Record<string, string> = {
+    programado: 'En bodega',
     en_despacho: 'Por entregar',
     entregado: 'Entregado ✓',
     parcial: 'Parcial',

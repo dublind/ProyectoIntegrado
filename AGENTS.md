@@ -33,7 +33,7 @@ Las respuestas del cliente incorporadas el 13/10/2026 (PBI 42/43) prevalecen sob
 | **Frontend Móvil (Chofer)** | **Vue 3 PWA (Progressive Web App)** | Hoja de ruta para reparto en terreno, compatible con almacenamiento local (IndexedDB / LocalStorage) para operación *offline-first*. |
 | **Backend & Base de datos** | **Supabase (PostgreSQL)** | API REST automática, autenticación con Row Level Security (RLS) y Edge Functions para Webpay/WhatsApp. |
 | **Pasarela de pago** | **Webpay Plus (Transbank)** | Pago digital anticipado con confirmación por webhook/commit. |
-| **Transferencias manuales** | **Módulo interno** | Validación de comprobantes con algoritmo de conmutación automática al alcanzar **45 comprobantes procesados**. |
+| **Transferencias manuales** | **Módulo interno** | Validación manual de comprobantes, abonados a la cuenta única de la empresa. |
 | **Geolocalización** | **Google Maps Platform** | Geocoding para direcciones y ordenamiento geográfico de paradas. |
 
 ---
@@ -53,9 +53,9 @@ Las respuestas del cliente incorporadas el 13/10/2026 (PBI 42/43) prevalecen sob
 3. **Escalamiento de botellones pendientes:**
    * A los **30 días** sin devolución: Pasa a bodega de *no retornados*.
    * A los **60 días**: Baja definitiva con marca persistente en la ficha de cliente para exigir retorno antes de autorizar nuevos pedidos.
-4. **Regla de 45 transferencias bancarias:**
-   * El sistema cuenta los comprobantes de la cuenta activa.
-   * Al llegar a 45, se rota automáticamente al siguiente número de cuenta configurado para evitar bloqueos por límites bancarios.
+4. **Regla de 45 transferencias bancarias (eliminada):**
+   * La rotación automática entre cuentas al llegar a 45 comprobantes se quitó del frontend por riesgo de incumplimiento tributario ante el SII.
+   * Todas las transferencias se abonan a una cuenta única. Reactivarla solo si el cliente lo vuelve a requerir y lo valida con su contador.
 5. **Promesa de servicio al cliente:**
    * La confirmación indica: *"Su pedido será entregado mañana"* (sin franja horaria rígida para evitar impaciencia o fricción por tráfico).
 

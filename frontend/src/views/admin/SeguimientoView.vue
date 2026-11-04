@@ -21,8 +21,8 @@
           </div>
         </div>
         <p class="text-xs text-muted">
-          El furgón 1 sigue la ruta real del turno por calles: avanza a la próxima parada y espera ahí hasta que el chofer
-          confirma en su app. {{ rutasReales ? 'Rutas calculadas por calles (OSRM).' : 'Ruteo por calles no disponible: recorrido aproximado.' }}
+          Cada furgón sigue su ruta planificada para hoy por calles: avanza a la próxima parada y espera ahí hasta que
+          su chofer confirma en la app. {{ rutasReales ? 'Rutas calculadas por calles (OSRM).' : 'Ruteo por calles no disponible: recorrido aproximado.' }}
         </p>
       </section>
 
@@ -34,7 +34,7 @@
             <strong>{{ f.nombre }}</strong>
             <span class="font-mono text-xs text-muted">{{ f.patente }} · {{ f.chofer }}</span>
           </div>
-          <span :class="['badge', f.demo ? 'badge-neutral' : 'badge-success']">{{ f.demo ? 'Demo' : 'Turno real' }}</span>
+          <span :class="['badge', f.fase === 'estacionado' ? 'badge-neutral' : 'badge-success']">{{ f.fase === 'estacionado' ? 'En bodega' : 'En ruta' }}</span>
         </div>
         <div class="truck-status">
           <span :class="['phase', `phase-${f.fase}`]">{{ etiquetaFase[f.fase] }}</span>
@@ -58,13 +58,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { Clock, Gauge, Pause, Play, Route, Truck } from 'lucide-vue-next';
 import { appStore } from '../../store/useAppStore';
 import { notificar } from '../../store/useToast';
 import { BODEGA_CENTRAL } from '../../utils/geo';
 import { crearMapa } from '../../utils/mapa';
 import type { LineaMapa, MapaAdapter, MarcadorMapa, ProveedorMapa } from '../../utils/mapa';
+import { hoyISO } from '../../utils/formato';
 import { puntoEnTrazado, trazarRuta } from '../../utils/rutas';
 import type { Trazado } from '../../utils/rutas';
 import type { Coordenadas, Pedido } from '../../types';
@@ -106,8 +107,6 @@ interface Simulacion {
   v: number; // m/s
   objetivoId: string | null;
   mov: Movimiento | null;
-  esperaParada: number;
-  demoIdx: number;
 }
 
 const etiquetaFase: Record<Fase, string> = {
@@ -140,46 +139,39 @@ const ACELERACION = 1.6;
 const FRENADO = 2.2;
 // 1 segundo real = 5 segundos simulados a velocidad x1
 const ESCALA_TIEMPO = 5;
-const ESPERA_PARADA_DEMO = 90;
-const ESPERA_BODEGA_DEMO = 60;
-
-// Ruta de demostración del furgón 2 (oriente de Santiago)
-const RUTA_DEMO: Objetivo[] = [
-  { id: 'demo-1', nombre: 'Av. Apoquindo 4500, Las Condes', coords: { lat: -33.4135, lng: -70.5830 }, esBodega: false },
-  { id: 'demo-2', nombre: 'Vitacura 3200, Vitacura', coords: { lat: -33.4020, lng: -70.5990 }, esBodega: false },
-  { id: 'demo-3', nombre: 'Av. Ossa 1600, La Reina', coords: { lat: -33.4410, lng: -70.5560 }, esBodega: false },
-  { id: 'demo-4', nombre: 'Av. Grecia 2100, Ñuñoa', coords: { lat: -33.4640, lng: -70.5980 }, esBodega: false },
-  { id: 'demo-bodega', nombre: 'Bodega central', coords: BODEGA_CENTRAL, esBodega: true }
-];
 const BODEGA: Objetivo = { id: 'bodega', nombre: 'Bodega central', coords: BODEGA_CENTRAL, esBodega: true };
 
-const turno = computed(() => appStore.state.turnoActivo);
-const paradasTurno = computed(() => appStore.pedidosDespachoActivo.value.filter((p): p is Pedido & { coords: Coordenadas } => !!p.coords));
-const pendientes = computed(() => paradasTurno.value.filter(p => p.estado === 'en_despacho'));
+// Color de cada furgón en el mapa (paleta AguaMantra: petróleo y bronce)
+const COLORES = ['#0B5E6E', '#9C6B43', '#2E8B9A', '#1E4A45'];
 
-const v1 = appStore.state.vehiculos[0];
-const v2 = appStore.state.vehiculos[1];
-const flota = reactive<FurgonVista[]>([
-  { id: v1.id, nombre: 'Furgón 1', patente: v1.patente, chofer: v1.choferAsignado, color: '#0B5E6E', demo: false,
-    fase: 'estacionado', estadoTexto: '', velocidadKmh: 0, etaMin: null, kmRestantes: null },
-  { id: v2.id, nombre: 'Furgón 2', patente: v2.patente, chofer: v2.choferAsignado, color: '#ff262a', demo: true,
-    fase: 'estacionado', estadoTexto: '', velocidadKmh: 0, etaMin: null, kmRestantes: null }
-]);
+type ParadaMapa = Pedido & { coords: Coordenadas };
 
-const sims = new Map<string, Simulacion>([
-  [v1.id, { pos: BODEGA_CENTRAL, v: 0, objetivoId: null, mov: null, esperaParada: 0, demoIdx: 0 }],
-  [v2.id, { pos: RUTA_DEMO[0].coords, v: 0, objetivoId: null, mov: null, esperaParada: 0, demoIdx: 1 }]
-]);
+const turnoHoy = (vehiculoId: string) => appStore.turnoDe(vehiculoId, hoyISO());
+const paradasDe = (vehiculoId: string): ParadaMapa[] => {
+  const t = turnoHoy(vehiculoId);
+  return t ? appStore.pedidosDeTurno(t).filter((x): x is ParadaMapa => !!x.coords) : [];
+};
+const pendientesDe = (vehiculoId: string) => paradasDe(vehiculoId).filter(x => x.estado === 'en_despacho');
 
-// El furgón real va a la próxima parada pendiente; sin pendientes vuelve a bodega
-function objetivoReal(): Objetivo | { estacionado: string } {
-  if (turno.value.estado === 'preparacion' && paradasTurno.value.length) {
-    return { estacionado: `Cargando ${turno.value.botellonesCargados} bidones · esperando que el chofer inicie la ruta` };
+const flota = reactive<FurgonVista[]>(appStore.state.vehiculos.filter(v => v.activo).map((v, i) => ({
+  id: v.id, nombre: `Furgón ${i + 1}`, patente: v.patente, chofer: v.choferAsignado, color: COLORES[i % COLORES.length],
+  demo: false, fase: 'estacionado', estadoTexto: '', velocidadKmh: 0, etaMin: null, kmRestantes: null
+})));
+
+const sims = new Map<string, Simulacion>(flota.map(f => [
+  f.id, { pos: BODEGA_CENTRAL, v: 0, objetivoId: null, mov: null }
+]));
+
+// Cada furgón va a su próxima parada pendiente de hoy; sin pendientes vuelve a bodega
+function objetivoReal(vehiculoId: string): Objetivo | { estacionado: string } {
+  const turno = turnoHoy(vehiculoId);
+  const paradas = paradasDe(vehiculoId);
+  if (!turno || !paradas.length) return { estacionado: 'Sin pedidos planificados hoy' };
+  if (turno.estado === 'preparacion') {
+    return { estacionado: `${paradas.length} paradas planificadas · esperando que el chofer cargue e inicie la ruta` };
   }
-  if (turno.value.estado !== 'en_ruta' || !paradasTurno.value.length) {
-    return { estacionado: 'Sin ruta activa' };
-  }
-  const p = pendientes.value[0];
+  if (turno.estado === 'finalizado') return { estacionado: 'Ruta de hoy cerrada en bodega' };
+  const p = pendientesDe(vehiculoId)[0];
   return p ? { id: p.id, nombre: p.clienteNombre, coords: p.coords, esBodega: false } : BODEGA;
 }
 
@@ -202,14 +194,15 @@ function dibujarParadas() {
   marcadoresParadas = [
     m.marcadorHtml(BODEGA_CENTRAL, { clase: 'base-marker', html: '<span>B</span>', titulo: 'Bodega central', tamano: 30, zIndex: 5 })
   ];
-  paradasTurno.value.forEach((p, idx) => {
-    const clase = p.estado === 'entregado' || p.estado === 'parcial' ? 'is-done' : p.estado === 'ausente' ? 'is-absent' : 'is-pending';
-    marcadoresParadas.push(m.marcadorHtml(p.coords, {
-      clase: `stop-marker ${clase}`, html: `<span>${idx + 1}</span>`, titulo: `${idx + 1}. ${p.clienteNombre} · ${p.direccion}`, tamano: 26, zIndex: 10
-    }));
-  });
-  RUTA_DEMO.filter(d => !d.esBodega).forEach(d => {
-    marcadoresParadas.push(m.marcadorHtml(d.coords, { clase: 'demo-marker', html: '<span></span>', titulo: `Demo: ${d.nombre}`, tamano: 12, zIndex: 4 }));
+  // Paradas numeradas por furgón, con el borde del color de su furgón
+  flota.forEach(f => {
+    paradasDe(f.id).forEach((p, idx) => {
+      const clase = p.estado === 'entregado' || p.estado === 'parcial' ? 'is-done' : p.estado === 'ausente' ? 'is-absent' : 'is-pending';
+      marcadoresParadas.push(m.marcadorHtml(p.coords, {
+        clase: `stop-marker ${clase}`, html: `<span style="border-color:${f.color}">${idx + 1}</span>`,
+        titulo: `${f.nombre} · ${idx + 1}. ${p.clienteNombre} · ${p.direccion}`, tamano: 26, zIndex: 10
+      }));
+    });
   });
 }
 
@@ -232,11 +225,12 @@ async function dibujarPlan() {
   const token = ++tokenPlan;
 
   const planes: { id: string; color: string; puntos: Coordenadas[] }[] = [];
-  const obj = objetivoReal();
-  if ('id' in obj) {
-    planes.push({ id: v1.id, color: '#0B5E6E', puntos: [obj.coords, ...pendientes.value.slice(1).map(p => p.coords), BODEGA_CENTRAL] });
-  }
-  planes.push({ id: v2.id, color: '#ff262a', puntos: [...RUTA_DEMO.map(d => d.coords), RUTA_DEMO[0].coords] });
+  flota.forEach(f => {
+    const obj = objetivoReal(f.id);
+    if ('id' in obj) {
+      planes.push({ id: f.id, color: f.color, puntos: [obj.coords, ...pendientesDe(f.id).slice(1).map(p => p.coords), BODEGA_CENTRAL] });
+    }
+  });
 
   const resultados = await Promise.all(planes.map(async plan => {
     const tramos: Trazado[] = [];
@@ -274,7 +268,7 @@ function moverMarcador(id: string, pos: Coordenadas, rumbo?: number) {
 
 function paso(f: FurgonVista, sim: Simulacion, dt: number) {
   // 1. ¿A dónde debe ir?
-  const obj: Objetivo | { estacionado: string } = f.demo ? RUTA_DEMO[sim.demoIdx % RUTA_DEMO.length] : objetivoReal();
+  const obj = objetivoReal(f.id);
 
   if ('estacionado' in obj) {
     if (sim.objetivoId !== null) {
@@ -293,7 +287,6 @@ function paso(f: FurgonVista, sim: Simulacion, dt: number) {
   if (sim.objetivoId !== obj.id) {
     sim.objetivoId = obj.id;
     sim.mov = null;
-    sim.esperaParada = 0;
     const destino = obj;
     trazarRuta(sim.pos, destino.coords).then(t => {
       if (sim.objetivoId !== destino.id || desmontado) return;
@@ -315,11 +308,7 @@ function paso(f: FurgonVista, sim: Simulacion, dt: number) {
   if (mov.m >= t.totalM - 0.5) {
     sim.v = 0;
     Object.assign(f, { velocidadKmh: 0, etaMin: 0, kmRestantes: 0 });
-    if (f.demo) {
-      sim.esperaParada += dt;
-      Object.assign(f, { fase: obj.esBodega ? 'estacionado' : 'en_parada', estadoTexto: obj.esBodega ? 'Recargando en bodega' : `Entregando en ${obj.nombre}` });
-      if (sim.esperaParada >= (obj.esBodega ? ESPERA_BODEGA_DEMO : ESPERA_PARADA_DEMO)) sim.demoIdx++;
-    } else if (obj.esBodega) {
+    if (obj.esBodega) {
       Object.assign(f, { fase: 'estacionado', estadoTexto: 'Llegó a bodega · el chofer debe cerrar la ruta' });
     } else {
       Object.assign(f, { fase: 'en_parada', estadoTexto: `En ${obj.nombre} · esperando que el chofer confirme la entrega` });
@@ -340,7 +329,7 @@ function paso(f: FurgonVista, sim: Simulacion, dt: number) {
   const sem = t.semaforos[mov.semaforoIdx];
   const detenerEn = sem ? sem.m : t.totalM;
   const distancia = Math.max(0, detenerEn - mov.m);
-  const crucero = 10 + Math.sin(performance.now() / 3100 + (f.demo ? 1.3 : 0)) * 1.8;
+  const crucero = 10 + Math.sin(performance.now() / 3100 + f.id.length + f.patente.charCodeAt(0)) * 1.8;
   const limiteFreno = Math.sqrt(2 * FRENADO * distancia);
   sim.v = Math.max(Math.min(sim.v + ACELERACION * dt, crucero, limiteFreno), distancia > 2 ? 0.4 : 0.05);
   mov.m = Math.min(mov.m + sim.v * dt, detenerEn);
@@ -386,7 +375,9 @@ function enfocar(id: string) {
 function encuadrarTodo() {
   if (!mapa) return;
   mapa.ajustarTamano();
-  mapa.encuadrar([BODEGA_CENTRAL, ...paradasTurno.value.map(p => p.coords), ...RUTA_DEMO.map(d => d.coords)]);
+  const puntos = [BODEGA_CENTRAL, ...flota.flatMap(f => paradasDe(f.id).map(p => p.coords))];
+  if (puntos.length > 1) mapa.encuadrar(puntos);
+  else mapa.centrar(BODEGA_CENTRAL, 13);
 }
 
 function dibujarTodo() {
@@ -431,7 +422,7 @@ onMounted(async () => {
 });
 
 // Cambios del turno (entregas, asignaciones, inicio o cierre de ruta) actualizan paradas y ruta planificada
-watch(() => `${turno.value.estado}|${paradasTurno.value.map(p => `${p.id}:${p.estado}`).join('|')}`, () => {
+watch(() => flota.map(f => `${turnoHoy(f.id)?.estado}|${paradasDe(f.id).map(p => `${p.id}:${p.estado}`).join(',')}`).join('#'), () => {
   dibujarParadas();
   dibujarPlan();
 });
@@ -737,15 +728,6 @@ onBeforeUnmount(() => {
 :deep(.stop-marker.is-absent span) {
   border-color: #ff262a;
   color: #ff262a;
-}
-
-:deep(.demo-marker span) {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  background: #ffffff;
-  border: 2px solid #ff262a;
 }
 
 :deep(.base-marker span) {
