@@ -24,13 +24,16 @@ const contar = (fn: (estado: string) => boolean) => appStore.state.pedidos.filte
 
 // Cada pedido avanza por estas etapas; cada una indica la siguiente acción y lleva a la vista donde se hace
 const etapas = computed(() => {
-  const turno = appStore.state.turnoActivo;
+  const hoy = appStore.turnosDeHoy.value;
   const porCobrar = contar(e => e === 'pendiente_pago');
-  const porCargar = contar(e => e === 'pagado');
+  const porPlanificar = contar(e => e === 'pagado');
+  // Programados para hoy que siguen en bodega, esperando que el chofer cargue
+  const enBodega = hoy.filter(t => t.estado === 'preparacion').reduce((acc, t) => acc + t.pedidosIds.length, 0);
   const enRuta = contar(e => e === 'en_despacho');
   const novedades = contar(e => e === 'ausente') + appStore.state.pedidos.filter(p =>
     p.estado === 'parcial' && !p.saldoProgramado && (p.cantidadEntregada ?? p.cantidadBidones) < p.cantidadBidones).length;
-  const entregados = appStore.pedidosDespachoActivo.value.filter(p => p.estado === 'entregado' || p.estado === 'parcial').length;
+  const entregados = appStore.paradasDeHoy.value.filter(p => p.estado === 'entregado' || p.estado === 'parcial').length;
+  const rutasAbiertas = hoy.filter(t => t.estado === 'en_ruta').length;
 
   return [
     {
@@ -39,22 +42,27 @@ const etapas = computed(() => {
       activa: route.path === '/pedidos'
     },
     {
-      id: 'carga', titulo: 'Por cargar', cantidad: porCargar, tono: 'negro',
-      accion: 'Asignar al furgón', vacio: 'Nada en cola', to: '/despacho',
-      activa: route.path === '/despacho'
+      id: 'planificar', titulo: 'Por planificar', cantidad: porPlanificar, tono: 'negro',
+      accion: 'Arrastrar a un furgón y día', vacio: 'Todo planificado', to: '/despacho#planificar',
+      activa: route.path === '/despacho' && (!route.hash || route.hash === '#planificar')
     },
     {
-      id: 'ruta', titulo: turno.estado === 'preparacion' ? 'En bodega' : 'En ruta', cantidad: enRuta, tono: 'verde',
-      accion: turno.estado === 'preparacion' ? 'Chofer debe iniciar ruta' : 'Ver en el mapa', vacio: 'Sin paradas',
-      to: '/seguimiento', activa: route.path === '/seguimiento'
+      id: 'bodega', titulo: 'En bodega hoy', cantidad: enBodega, tono: 'petroleo',
+      accion: 'Chofer debe cargar', vacio: 'Nada por cargar', to: '/despacho#hoy',
+      activa: route.path === '/despacho' && route.hash === '#hoy'
+    },
+    {
+      id: 'ruta', titulo: 'En ruta', cantidad: enRuta, tono: 'verde',
+      accion: 'Ver en el mapa', vacio: 'Sin paradas', to: '/seguimiento', activa: route.path === '/seguimiento'
     },
     {
       id: 'novedades', titulo: 'Novedades', cantidad: novedades, tono: 'amarillo',
-      accion: 'Reprogramar', vacio: 'Sin novedades', to: '/despacho', activa: false
+      accion: 'Reprogramar', vacio: 'Sin novedades', to: '/despacho#novedades',
+      activa: route.path === '/despacho' && route.hash === '#novedades'
     },
     {
-      id: 'cierre', titulo: 'Entregados', cantidad: entregados, tono: 'gris',
-      accion: turno.estado === 'finalizado' ? 'Ruta cerrada' : 'Cerrar en bodega', vacio: 'Aún sin entregas',
+      id: 'cierre', titulo: 'Entregados hoy', cantidad: entregados, tono: 'gris',
+      accion: rutasAbiertas ? 'Cerrar rutas en bodega' : 'Rutas cerradas', vacio: 'Aún sin entregas',
       to: '/inventario', activa: route.path === '/inventario'
     }
   ];
@@ -64,7 +72,7 @@ const etapas = computed(() => {
 <style scoped>
 .flujo {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -111,6 +119,7 @@ const etapas = computed(() => {
 
 .tono-rojo .etapa-num { background: var(--zun-rojo); }
 .tono-negro .etapa-num { background: var(--am-petroleo); }
+.tono-petroleo .etapa-num { background: var(--am-turquesa); }
 .tono-verde .etapa-num { background: var(--zun-verde); }
 .tono-amarillo .etapa-num { background: #eab308; }
 .tono-gris .etapa-num { background: var(--zun-gris-medium); }

@@ -56,3 +56,43 @@ export function ordenarPorCercania<T extends { coords?: Coordenadas }>(items: T[
   }
   return resultado;
 }
+
+// Largo del circuito origen → paradas → origen (km en línea recta)
+function largoCircuito(origen: Coordenadas, puntos: Coordenadas[]) {
+  let km = 0;
+  let actual = origen;
+  for (const p of puntos) {
+    km += distanciaKm(actual, p);
+    actual = p;
+  }
+  return km + distanciaKm(actual, origen);
+}
+
+/**
+ * Orden local de respaldo (sin conexión): vecino más cercano mejorado con 2-opt,
+ * que deshace los cruces del recorrido. Parte y termina en la bodega.
+ */
+export function ordenarRutaLocal<T extends { coords?: Coordenadas }>(items: T[], origen = BODEGA_CENTRAL): T[] {
+  const ruta = ordenarPorCercania(items, origen);
+  if (ruta.length < 4 || ruta.some(p => !p.coords)) return ruta;
+  const coords = () => ruta.map(p => p.coords!);
+  let mejoro = true;
+  for (let vuelta = 0; mejoro && vuelta < 50; vuelta++) {
+    mejoro = false;
+    for (let i = 0; i < ruta.length - 1; i++) {
+      for (let j = i + 1; j < ruta.length; j++) {
+        const actual = largoCircuito(origen, coords());
+        const invertido = [...ruta.slice(0, i), ...ruta.slice(i, j + 1).reverse(), ...ruta.slice(j + 1)];
+        if (largoCircuito(origen, invertido.map(p => p.coords!)) < actual - 0.001) {
+          ruta.splice(0, ruta.length, ...invertido);
+          mejoro = true;
+        }
+      }
+    }
+  }
+  return ruta;
+}
+
+export function largoRutaKm(origen: Coordenadas, puntos: Coordenadas[]) {
+  return largoCircuito(origen, puntos);
+}

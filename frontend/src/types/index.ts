@@ -1,6 +1,7 @@
 export type EstadoPedido =
   | 'pendiente_pago'
   | 'pagado'
+  | 'programado' // planificado en un furgón y día, aún en bodega
   | 'en_despacho'
   | 'entregado'
   | 'parcial'
@@ -32,6 +33,9 @@ export interface Cliente {
 export interface Pedido {
   id: string;
   codigo: string;
+  tipo?: 'entrega' | 'retiro'; // retiro: parada solo para recoger envases pendientes (sin llenos ni cobro)
+  retiroEnvases?: number; // vacíos a recoger en una parada de retiro
+  retiroRealizado?: number; // vacíos efectivamente recogidos en la parada de retiro
   clienteId: string;
   clienteNombre: string;
   telefono: string;
@@ -97,6 +101,11 @@ export interface TurnoDespacho {
   capacidadMax: number;
   botellonesCargados: number; // envases a bordo (llenos + vacíos intercambiados)
   estado: 'preparacion' | 'en_ruta' | 'finalizado';
+  // Orden óptimo de paradas por tiempo de manejo (ids de pedido), calculado al planificar
+  ordenParadas?: string[];
+  rutaKm?: number;
+  rutaMin?: number;
+  rutaFuente?: 'calles' | 'aproximada'; // calles: OSRM con tiempos reales; aproximada: cálculo local sin conexión
 }
 
 export interface CuentaBancaria {
@@ -107,7 +116,7 @@ export interface CuentaBancaria {
   titular: string;
   rut: string;
   email: string;
-  comprobantesProcesados: number; // regla de 45 comprobantes
+  comprobantesProcesados: number; // sin uso: la rotación automática entre cuentas se eliminó
   activa: boolean;
 }
 

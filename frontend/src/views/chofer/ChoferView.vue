@@ -6,7 +6,14 @@
         <RouterLink to="/despacho" class="icon-btn" aria-label="Volver al panel"><ArrowLeft :size="20" /></RouterLink>
         <div class="app-bar-title">
           <strong>{{ tituloEtapa }}</strong>
-          <span>{{ turno.choferNombre }} · {{ vehiculo?.patente }} · turno {{ turno.turno }}</span>
+          <label class="van-select">
+            <span class="sr-only">Furgón</span>
+            <select v-model="vehiculoId" aria-label="Elegir furgón">
+              <option v-for="v in appStore.state.vehiculos" :key="v.id" :value="v.id">
+                {{ v.choferAsignado }} · {{ v.patente }}
+              </option>
+            </select>
+          </label>
         </div>
         <button @click="appStore.state.modoOffline = !appStore.state.modoOffline"
           :class="['net-pill', { offline: appStore.state.modoOffline }]" :aria-pressed="appStore.state.modoOffline">
@@ -22,9 +29,9 @@
       <!-- ===================== SIN RUTA ===================== -->
       <main v-if="etapa === 'sin_ruta'" class="screen screen-center">
         <img :src="paisaje" alt="" class="empty-art" />
-        <h1 class="screen-title">{{ turno.estado === 'finalizado' ? 'Ruta cerrada' : 'Sin ruta asignada' }}</h1>
+        <h1 class="screen-title">{{ turno?.estado === 'finalizado' ? 'Ruta cerrada' : 'Sin ruta asignada' }}</h1>
         <p class="screen-sub">
-          {{ turno.estado === 'finalizado'
+          {{ turno?.estado === 'finalizado'
             ? 'Descargaste el furgón en bodega. Buen trabajo.'
             : 'Cuando la oficina cargue pedidos al furgón, aparecerán aquí.' }}
         </p>
@@ -39,6 +46,7 @@
             <span class="load-num">{{ llenosACargar }}</span>
             <span class="load-lbl">botellones llenos<br />para {{ paradas.length }} paradas</span>
           </div>
+          <p v-if="infoRuta" class="route-info"><Route :size="14" /> {{ infoRuta }}</p>
         </section>
 
         <section class="block">
@@ -46,8 +54,8 @@
           <ol class="load-list">
             <li v-for="(p, idx) in paradas" :key="p.id">
               <span class="seq">{{ idx + 1 }}</span>
-              <span class="load-name">{{ p.clienteNombre }}<small>{{ p.comuna }}</small></span>
-              <span class="qty">{{ p.cantidadBidones }}</span>
+              <span class="load-name">{{ p.clienteNombre }}<small>{{ p.tipo === 'retiro' ? `Solo retiro · ${p.comuna}` : p.comuna }}</small></span>
+              <span :class="['qty', { 'qty-retiro': p.tipo === 'retiro' }]">{{ p.tipo === 'retiro' ? `↺${p.retiroEnvases}` : p.cantidadBidones }}</span>
             </li>
           </ol>
           <p v-if="retirosTotales > 0" class="note note-warn">
@@ -76,8 +84,9 @@
           </div>
         </div>
 
-        <!-- Ruta completa en Google Maps: un toque abre todas las paradas en orden -->
+        <!-- Ruta completa en Google Maps: un toque abre todas las paradas en el orden optimizado -->
         <div v-if="tramosMaps.length" class="maps-route">
+          <p v-if="infoRuta" class="route-info dark"><Route :size="14" /> {{ infoRuta }}</p>
           <a v-for="(t, idx) in tramosMaps" :key="t.url" :href="t.url" target="_blank" rel="noopener"
             :class="['btn', idx === 0 ? 'btn-primary' : 'btn-secondary', 'btn-maps']">
             <MapIcon :size="18" />
@@ -91,28 +100,10 @@
         <section v-if="siguiente" class="hero">
           <div class="hero-head">
             <span class="hero-kicker">Próxima parada · {{ ordenDe(siguiente.id) }} de {{ paradas.length }}</span>
-            <span class="paid-pill">Pagado</span>
+            <span :class="['paid-pill', { 'pill-retiro': esRetiro(siguiente) }]">{{ esRetiro(siguiente) ? 'Solo retiro' : 'Pagado' }}</span>
           </div>
           <h1 class="hero-title">{{ siguiente.clienteNombre }}</h1>
           <p class="hero-address"><MapPin :size="16" /> {{ siguiente.direccion }}, {{ siguiente.comuna }}</p>
-
-          <div class="task-grid">
-            <div class="task">
-              <span class="task-num">{{ siguiente.cantidadBidones }}</span>
-              <span class="task-lbl">Entregar llenos<br /><small>{{ siguiente.tipoProducto.replace('Agua Purificada ', '') }}</small></span>
-            </div>
-            <div :class="['task', { 'task-warn': retirosDe(siguiente.clienteId) > 0 }]">
-              <span class="task-num">{{ siguiente.cantidadBidones + retirosDe(siguiente.clienteId) }}</span>
-              <span class="task-lbl">Recibir vacíos<br /><small v-if="retirosDe(siguiente.clienteId)">incluye {{
-                retirosDe(siguiente.clienteId) }} pendiente(s)</small><small v-else>intercambio normal</small></span>
-            </div>
-          </div>
-
-          <div v-if="retirosDe(siguiente.clienteId) > 0" class="note note-warn">
-            <PackageOpen :size="16" />
-            <span>Este cliente debe <strong>{{ retirosDe(siguiente.clienteId) }} envase(s)</strong> de una entrega anterior.</span>
-            <button @click="retirar(siguiente)" class="btn btn-secondary btn-sm">Ya los retiré</button>
-          </div>
 
           <div class="quick-actions">
             <a :href="urlNavegar(siguiente)" target="_blank" rel="noopener" class="btn btn-secondary">
@@ -123,11 +114,38 @@
             </a>
           </div>
 
-          <button @click="entregar(siguiente)" class="btn btn-success btn-xl">
-            <Check :size="20" /> Entregado
+          <!-- Dos confirmaciones separadas: lo que entregó y lo que recibió -->
+          <div :class="['confirm-grid', { single: esRetiro(siguiente) }]">
+            <div v-if="!esRetiro(siguiente)" :class="['confirm-card', { ok: entregaConfirmada }]">
+              <span class="cc-label">Entregué llenos</span>
+              <span class="cc-num">{{ siguiente.cantidadBidones }}</span>
+              <small class="cc-sub">{{ siguiente.tipoProducto.replace('Agua Purificada ', '') }}</small>
+              <button class="cc-btn" :aria-pressed="entregaConfirmada" @click="entregaConfirmada = !entregaConfirmada">
+                <Check v-if="entregaConfirmada" :size="16" /> {{ entregaConfirmada ? `Entregué ${siguiente.cantidadBidones}` : 'Confirmar entrega' }}
+              </button>
+            </div>
+
+            <div :class="['confirm-card', { ok: vaciosConfirmados, warn: !esRetiro(siguiente) && vaciosRecibidos < siguiente.cantidadBidones }]">
+              <span class="cc-label">Recibí vacíos</span>
+              <div class="stepper">
+                <button @click="cambiarVacios(-1)" :disabled="vaciosRecibidos <= 0" aria-label="Menos vacíos">−</button>
+                <strong class="cc-num">{{ vaciosRecibidos }}</strong>
+                <button @click="cambiarVacios(1)" :disabled="vaciosRecibidos >= maxVacios" aria-label="Más vacíos">+</button>
+              </div>
+              <small class="cc-sub">{{ esperadoVacios }}</small>
+              <button class="cc-btn" :aria-pressed="vaciosConfirmados" @click="vaciosConfirmados = !vaciosConfirmados">
+                <Check v-if="vaciosConfirmados" :size="16" /> {{ vaciosConfirmados ? `Recibí ${vaciosRecibidos}` : 'Confirmar vacíos' }}
+              </button>
+            </div>
+          </div>
+
+          <p v-if="avisoVacios" class="note note-warn"><PackageOpen :size="16" /> <span>{{ avisoVacios }}</span></p>
+
+          <button @click="cerrarParada(siguiente)" class="btn btn-success btn-xl" :disabled="!paradaLista">
+            <Check :size="20" /> {{ textoCierre }}
           </button>
           <button @click="abrirNovedad(siguiente)" class="link-btn">
-            <AlertTriangle :size="15" /> No pude entregar normal · reportar novedad
+            <AlertTriangle :size="15" /> {{ esRetiro(siguiente) ? 'No pude retirar · reportar novedad' : 'No pude entregar normal · reportar novedad' }}
           </button>
         </section>
 
@@ -165,8 +183,8 @@
           <h2 class="block-title">Después</h2>
           <div v-for="p in despues" :key="p.id" class="row">
             <span class="seq">{{ ordenDe(p.id) }}</span>
-            <span class="row-main">{{ p.clienteNombre }}<small>{{ p.direccion }}, {{ p.comuna }}</small></span>
-            <span class="qty">{{ p.cantidadBidones }}</span>
+            <span class="row-main">{{ p.clienteNombre }}<small>{{ p.tipo === 'retiro' ? 'Solo retiro · ' : '' }}{{ p.direccion }}, {{ p.comuna }}</small></span>
+            <span :class="['qty', { 'qty-retiro': p.tipo === 'retiro' }]">{{ p.tipo === 'retiro' ? `↺${p.retiroEnvases}` : p.cantidadBidones }}</span>
           </div>
         </section>
 
@@ -207,8 +225,8 @@
           <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="titulo-novedad">
             <div class="sheet-grip"></div>
             <h3 id="titulo-novedad">¿Qué pasó en esta parada?</h3>
-            <p class="sheet-sub">{{ novedadPedido.clienteNombre }} · {{ novedadPedido.cantidadBidones }} botellón(es). Sin
-              fotografía obligatoria.</p>
+            <p class="sheet-sub">{{ novedadPedido.clienteNombre }} · {{ esRetiro(novedadPedido) ? `retiro de ${novedadPedido.retiroEnvases} envase(s)` : `${novedadPedido.cantidadBidones} botellón(es)` }}.
+              Sin fotografía obligatoria.</p>
 
             <div class="options">
               <label :class="['option', { selected: tipoNovedad === 'ausente' }]">
@@ -216,13 +234,7 @@
                 <DoorClosed :size="22" />
                 <span><strong>No hay nadie</strong><small>No se entrega. La oficina coordina volver hoy o mañana.</small></span>
               </label>
-              <label :class="['option', { selected: tipoNovedad === 'pendiente' }]">
-                <input type="radio" value="pendiente" v-model="tipoNovedad" />
-                <PackageX :size="22" />
-                <span><strong>Entregué, pero no me dieron el vacío</strong><small>El envase queda pendiente de
-                    devolución.</small></span>
-              </label>
-              <label :class="['option', { selected: tipoNovedad === 'roto' }]">
+              <label v-if="!esRetiro(novedadPedido)" :class="['option', { selected: tipoNovedad === 'roto' }]">
                 <input type="radio" value="roto" v-model="tipoNovedad" />
                 <ShieldAlert :size="22" />
                 <span><strong>Se rompió un botellón</strong><small>Entrega parcial. El saldo va al turno siguiente sin nuevo
@@ -261,9 +273,10 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import {
-  AlertTriangle, ArrowLeft, Check, DoorClosed, Map as MapIcon, MapPin, Navigation, PackageOpen, PackageX, Phone, Play, ShieldAlert,
-  Warehouse, Wifi, WifiOff
+  AlertTriangle, ArrowLeft, Check, DoorClosed, Map as MapIcon, MapPin, Navigation, PackageOpen, Phone, Play, ShieldAlert,
+  Route, Warehouse, Wifi, WifiOff
 } from 'lucide-vue-next';
 import paisaje from '../../assets/aguamantra-paisaje.jpg';
 import { appStore } from '../../store/useAppStore';
@@ -271,15 +284,30 @@ import { notificar } from '../../store/useToast';
 import { BODEGA_CENTRAL } from '../../utils/geo';
 import { enlacesRutaGoogleMaps } from '../../utils/rutas';
 import type { TramoGoogleMaps } from '../../utils/rutas';
+import { hoyISO } from '../../utils/formato';
 import type { Pedido } from '../../types';
 
-const turno = computed(() => appStore.state.turnoActivo);
-const vehiculo = computed(() => appStore.state.vehiculos.find(v => v.id === turno.value.vehiculoId));
-const paradas = computed(() => appStore.pedidosDespachoActivo.value);
+// Cada chofer usa la app con su furgón: se elige una vez y el teléfono lo recuerda (o llega por ?furgon=veh-2)
+const CLAVE_FURGON = 'chofer_furgon';
+const route = useRoute();
+function furgonInicial() {
+  const desdeUrl = typeof route.query.furgon === 'string' ? route.query.furgon : null;
+  let guardado: string | null = null;
+  try { guardado = localStorage.getItem(CLAVE_FURGON); } catch { /* sin almacenamiento */ }
+  const candidato = desdeUrl ?? guardado;
+  return appStore.state.vehiculos.some(v => v.id === candidato) ? candidato! : appStore.state.vehiculos[0].id;
+}
+const vehiculoId = ref(furgonInicial());
+watch(vehiculoId, id => {
+  try { localStorage.setItem(CLAVE_FURGON, id); } catch { /* sin almacenamiento */ }
+});
+
+const turno = computed(() => appStore.turnoDe(vehiculoId.value, hoyISO()));
+const paradas = computed(() => (turno.value ? appStore.pedidosDeTurno(turno.value) : []));
 
 // La app guía al chofer en 3 pasos: cargar en bodega, entregar, volver y cerrar
 const etapa = computed<'sin_ruta' | 'carga' | 'ruta'>(() => {
-  if (paradas.value.length === 0 || turno.value.estado === 'finalizado') return 'sin_ruta';
+  if (!turno.value || paradas.value.length === 0 || turno.value.estado === 'finalizado') return 'sin_ruta';
   return turno.value.estado === 'preparacion' ? 'carga' : 'ruta';
 });
 const tituloEtapa = computed(() => ({ sin_ruta: 'Mi ruta', carga: 'Carga en bodega', ruta: 'En ruta' })[etapa.value]);
@@ -300,10 +328,20 @@ const rotosTurno = computed(() => paradas.value
   .reduce((acc, p) => acc + (p.cantidadBidones - (p.cantidadEntregada ?? p.cantidadBidones)), 0));
 const resumenRetorno = computed(() => {
   const llenos = [...pendientes.value, ...ausentes.value].reduce((acc, p) => acc + p.cantidadBidones, 0);
-  return { llenos, vacios: Math.max(0, turno.value.botellonesCargados - llenos) };
+  return { llenos, vacios: Math.max(0, (turno.value?.botellonesCargados ?? 0) - llenos) };
 });
 
-// Paradas pendientes en orden geográfico + regreso a bodega (se recalcula con cada entrega)
+// Orden de visita calculado para el menor tiempo de manejo (sale y vuelve a la bodega)
+const infoRuta = computed(() => {
+  const t = turno.value;
+  if (!t || !paradas.value.length) return '';
+  if (t.estado === 'preparacion' && !t.ordenParadas) return 'Calculando el recorrido más rápido…';
+  if (t.rutaKm === undefined || t.rutaMin === undefined) return '';
+  const base = `${t.rutaKm.toFixed(1)} km · ~${Math.round(t.rutaMin)} min de manejo`;
+  return t.rutaFuente === 'calles' ? `Ruta optimizada por tiempo: ${base}` : `Orden aproximado (sin conexión): ${base}`;
+});
+
+// Paradas pendientes en el orden optimizado + regreso a bodega (se recalcula con cada entrega)
 const tramosMaps = computed(() => (pendientes.value.length ? enlacesRutaGoogleMaps(pendientes.value, BODEGA_CENTRAL) : []));
 
 function descripcionTramo(t: TramoGoogleMaps) {
@@ -324,31 +362,100 @@ function urlNavegar(p: Pedido) {
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${p.direccion}, ${p.comuna}`)}`;
 }
 
+const esRetiro = (p: Pedido) => p.tipo === 'retiro';
+
+// Confirmaciones de la parada actual. Se reinician al pasar a la siguiente parada.
+const entregaConfirmada = ref(false);
+const vaciosConfirmados = ref(false);
+const vaciosRecibidos = ref(0);
+const deudaSiguiente = computed(() => (siguiente.value ? retirosDe(siguiente.value.clienteId) : 0));
+// En una entrega se esperan tantos vacíos como llenos; además puede devolver lo que debía de antes
+const maxVacios = computed(() => {
+  const p = siguiente.value;
+  if (!p) return 0;
+  return esRetiro(p) ? deudaSiguiente.value : p.cantidadBidones + deudaSiguiente.value;
+});
+watch(() => siguiente.value?.id, () => {
+  const p = siguiente.value;
+  entregaConfirmada.value = false;
+  vaciosConfirmados.value = false;
+  vaciosRecibidos.value = p ? (esRetiro(p) ? deudaSiguiente.value : p.cantidadBidones) : 0;
+}, { immediate: true });
+
+function cambiarVacios(delta: number) {
+  vaciosRecibidos.value = Math.min(Math.max(0, vaciosRecibidos.value + delta), maxVacios.value);
+  vaciosConfirmados.value = false; // al cambiar la cantidad hay que volver a confirmar
+}
+
+const esperadoVacios = computed(() => {
+  const p = siguiente.value;
+  if (!p) return '';
+  if (esRetiro(p)) return `debe ${deudaSiguiente.value} de entregas anteriores`;
+  return deudaSiguiente.value
+    ? `esperado ${p.cantidadBidones} · además debe ${deudaSiguiente.value} de antes`
+    : `esperado ${p.cantidadBidones} (intercambio)`;
+});
+
+// Qué va a pasar con los vacíos al cerrar la parada
+const avisoVacios = computed(() => {
+  const p = siguiente.value;
+  if (!p) return '';
+  if (esRetiro(p)) {
+    const quedan = deudaSiguiente.value - vaciosRecibidos.value;
+    return quedan > 0 ? `Quedarán ${quedan} envase(s) pendiente(s) para un próximo retiro.` : '';
+  }
+  const faltan = p.cantidadBidones - vaciosRecibidos.value;
+  if (faltan > 0) return `Faltan ${faltan} vacío(s): quedarán pendientes de devolución del cliente.`;
+  const extra = vaciosRecibidos.value - p.cantidadBidones;
+  if (extra > 0) return `Recibes ${extra} envase(s) que el cliente debía de antes.`;
+  return '';
+});
+
+const paradaLista = computed(() => vaciosConfirmados.value && (!siguiente.value || esRetiro(siguiente.value) || entregaConfirmada.value));
+
+const textoCierre = computed(() => {
+  const p = siguiente.value;
+  if (!p) return '';
+  if (!paradaLista.value) return esRetiro(p) ? 'Confirma los vacíos para cerrar' : 'Confirma entrega y vacíos para cerrar';
+  return esRetiro(p)
+    ? `Cerrar parada · recibí ${vaciosRecibidos.value}`
+    : `Cerrar parada · entregué ${p.cantidadBidones} · recibí ${vaciosRecibidos.value}`;
+});
+
 function resultado(p: Pedido) {
+  if (esRetiro(p)) return p.retiroRealizado ? `Retiro · ${p.retiroRealizado} envase(s) recogido(s)` : 'Retiro · sin envases para recoger';
   if (p.estado === 'parcial') return `Parcial: ${p.cantidadEntregada} de ${p.cantidadBidones}, aceptado por el cliente`;
   if (p.envasesNoDevueltos) return `Entregado · ${p.envasesNoDevueltos} vacío(s) pendiente(s)`;
   return `Entregado · ${p.cantidadBidones} bidón(es)`;
 }
 
 function iniciar() {
-  appStore.iniciarRuta();
-  notificar('Ruta iniciada. La oficina ya ve tu avance.', 'exito', 2800);
+  if (!turno.value) return;
+  try {
+    appStore.iniciarRuta(turno.value.id);
+    notificar('Ruta iniciada. La oficina ya ve tu avance.', 'exito', 2800);
+  } catch (err) {
+    notificar((err as Error).message, 'error', 5000);
+  }
 }
 
-function entregar(p: Pedido) {
-  appStore.confirmarEntregaChofer(p.id);
-  notificar(`Entrega a ${p.clienteNombre} registrada.`, 'exito', 2500);
-}
-
-function retirar(p: Pedido) {
-  const n = appStore.registrarRetiroChofer(p.id);
-  if (n > 0) notificar(`${n} envase(s) retirado(s).`, 'exito', 2500);
+function cerrarParada(p: Pedido) {
+  if (!paradaLista.value) return;
+  const recibidos = vaciosRecibidos.value;
+  if (esRetiro(p)) {
+    appStore.confirmarEntregaChofer(p.id, recibidos);
+    notificar(`Retiro en ${p.clienteNombre}: ${recibidos} envase(s) recogido(s).`, 'exito', 2800);
+    return;
+  }
+  appStore.confirmarVisitaChofer(p.id, recibidos);
+  notificar(`${p.clienteNombre}: entregaste ${p.cantidadBidones} y recibiste ${recibidos} vacío(s).`, 'exito', 2800);
 }
 
 const confirmarCierre = ref(false);
 
 function cerrarRuta() {
-  const r = appStore.liquidarRetornoFurgonCentral('chofer');
+  if (!turno.value) return;
+  const r = appStore.liquidarRetornoFurgonCentral(turno.value.id, 'chofer');
   confirmarCierre.value = false;
   notificar(`Ruta cerrada: ${r.vaciosRecolectados} vacíos y ${r.llenosNoEntregados} llenos descargados.`, 'exito', 4000);
 }
@@ -478,6 +585,35 @@ function enviarNovedad() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.van-select select {
+  max-width: 100%;
+  padding: 2px 22px 2px 0;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.van-select select:focus {
+  box-shadow: none;
+  background: transparent;
+  color: #ffffff;
+}
+
+.van-select option {
+  color: var(--zun-negro);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
 }
 
 .net-pill {
@@ -734,6 +870,20 @@ function enviarNovedad() {
   gap: 10px;
 }
 
+.route-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.route-info.dark {
+  color: var(--am-petroleo);
+  font-weight: 600;
+}
+
 .maps-route {
   display: flex;
   flex-direction: column;
@@ -749,13 +899,122 @@ function enviarNovedad() {
   font-size: 0.95rem;
 }
 
+.btn-maps {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+/* Descripción del tramo en su propia línea, bajo el título */
 .btn-maps small {
-  margin-left: auto;
+  flex-basis: 100%;
+  padding-left: 28px;
+  text-align: left;
   font-family: var(--font-mono);
   font-size: 0.72rem;
   font-weight: 600;
   opacity: 0.75;
-  white-space: nowrap;
+}
+
+.pill-retiro {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.qty-retiro {
+  background: #fef9c3;
+  border-color: #facc15;
+  color: #854d0e;
+}
+
+.confirm-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.confirm-grid.single {
+  grid-template-columns: 1fr;
+}
+
+.confirm-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 10px;
+  border-radius: 12px;
+  border: 2px solid var(--zun-border);
+  background: var(--zun-blanco-sutil);
+  text-align: center;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.confirm-card.warn {
+  border-color: #facc15;
+  background: #fef9c3;
+}
+
+.confirm-card.ok {
+  border-color: var(--zun-verde);
+  background: var(--zun-verde-light);
+}
+
+.cc-label {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--zun-gris-dark);
+}
+
+.cc-num {
+  font-family: var(--font-mono);
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--zun-negro);
+}
+
+.cc-sub {
+  font-size: 0.7rem;
+  color: var(--zun-gris);
+  line-height: 1.3;
+  min-height: 1.8em;
+}
+
+.cc-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 9px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--zun-border);
+  background: var(--zun-blanco);
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--am-noche);
+}
+
+.confirm-card.ok .cc-btn {
+  background: var(--zun-verde);
+  border-color: var(--zun-verde);
+  color: #ffffff;
+}
+
+.confirm-card .stepper {
+  gap: 10px;
+}
+
+.confirm-card .stepper button:disabled {
+  opacity: 0.35;
+}
+
+.btn-xl:disabled {
+  opacity: 0.55;
+  background: var(--zun-gris-light) !important;
+  border-color: var(--zun-gris-light) !important;
+  color: var(--zun-gris-dark) !important;
+  pointer-events: none;
 }
 
 .btn-xl {

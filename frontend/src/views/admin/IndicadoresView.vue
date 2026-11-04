@@ -39,11 +39,11 @@
         <div class="card-head">
           <div>
             <h2 class="card-title">Avance de la ruta</h2>
-            <p class="card-sub">{{ turno.choferNombre }} · turno {{ turno.turno }} · {{ turno.botellonesCargados }} envases a bordo</p>
+            <p class="card-sub">{{ resumenFurgones }}</p>
           </div>
           <RouterLink to="/seguimiento" class="btn btn-secondary btn-sm"><MapPinned :size="14" /> Mapa</RouterLink>
         </div>
-        <div v-if="paradas.length === 0" class="empty-box">No hay paradas asignadas al turno.</div>
+        <div v-if="paradas.length === 0" class="empty-box">No hay paradas planificadas para hoy.</div>
         <ol v-else class="route-steps">
           <li v-for="(p, idx) in paradas" :key="p.id" :class="['route-step', `is-${p.estado}`]">
             <span class="step-dot">{{ idx + 1 }}</span>
@@ -115,17 +115,24 @@ import { formatCLP, formatEstadoStop, getBadgeStopClass, hoyISO } from '../../ut
 
 const inv = computed(() => appStore.state.inventario);
 const actividad = computed(() => appStore.state.actividad.slice(0, 12));
-const turno = computed(() => appStore.state.turnoActivo);
-const paradas = computed(() => appStore.pedidosDespachoActivo.value);
+const paradas = computed(() => appStore.paradasDeHoy.value);
+// Una línea por furgón con turno hoy: chofer, estado y lo que lleva a bordo
+const resumenFurgones = computed(() => {
+  const turnos = appStore.turnosDeHoy.value;
+  if (!turnos.length) return 'Sin furgones planificados hoy';
+  const estado = { preparacion: 'en bodega', en_ruta: 'en ruta', finalizado: 'ruta cerrada' } as const;
+  return turnos.map(t => `${t.choferNombre}: ${estado[t.estado]}${t.estado === 'en_ruta' ? ` (${t.botellonesCargados} a bordo)` : ''}`).join(' · ');
+});
 
-const pedidosHoy = computed(() => appStore.state.pedidos.filter(p => p.fechaCreacion.startsWith(hoyISO())));
+// Ventas del día: los retiros de envases no son pedidos de venta
+const pedidosHoy = computed(() => appStore.state.pedidos.filter(p => p.tipo !== 'retiro' && p.fechaCreacion.startsWith(hoyISO())));
 const ventasHoy = computed(() => pedidosHoy.value
   .filter(p => p.estado !== 'pendiente_pago' && p.estado !== 'cancelado')
   .reduce((acc, p) => acc + p.total, 0));
 const porCobrarHoy = computed(() => pedidosHoy.value.filter(p => p.estado === 'pendiente_pago').length);
 
 const entregadas = computed(() => paradas.value.filter(p => p.estado === 'entregado' || p.estado === 'parcial').length);
-const porVisitar = computed(() => paradas.value.filter(p => p.estado === 'en_despacho').length);
+const porVisitar = computed(() => paradas.value.filter(p => p.estado === 'en_despacho' || p.estado === 'programado').length);
 const ausentes = computed(() => appStore.state.pedidos.filter(p => p.estado === 'ausente').length);
 const pctEntregas = computed(() => (paradas.value.length ? (entregadas.value / paradas.value.length) * 100 : 0));
 
