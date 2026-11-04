@@ -160,7 +160,7 @@ const pendientes = computed(() => paradasTurno.value.filter(p => p.estado === 'e
 const v1 = appStore.state.vehiculos[0];
 const v2 = appStore.state.vehiculos[1];
 const flota = reactive<FurgonVista[]>([
-  { id: v1.id, nombre: 'Furgón 1', patente: v1.patente, chofer: v1.choferAsignado, color: '#111111', demo: false,
+  { id: v1.id, nombre: 'Furgón 1', patente: v1.patente, chofer: v1.choferAsignado, color: '#0B5E6E', demo: false,
     fase: 'estacionado', estadoTexto: '', velocidadKmh: 0, etaMin: null, kmRestantes: null },
   { id: v2.id, nombre: 'Furgón 2', patente: v2.patente, chofer: v2.choferAsignado, color: '#ff262a', demo: true,
     fase: 'estacionado', estadoTexto: '', velocidadKmh: 0, etaMin: null, kmRestantes: null }
@@ -234,7 +234,7 @@ async function dibujarPlan() {
   const planes: { id: string; color: string; puntos: Coordenadas[] }[] = [];
   const obj = objetivoReal();
   if ('id' in obj) {
-    planes.push({ id: v1.id, color: '#111111', puntos: [obj.coords, ...pendientes.value.slice(1).map(p => p.coords), BODEGA_CENTRAL] });
+    planes.push({ id: v1.id, color: '#0B5E6E', puntos: [obj.coords, ...pendientes.value.slice(1).map(p => p.coords), BODEGA_CENTRAL] });
   }
   planes.push({ id: v2.id, color: '#ff262a', puntos: [...RUTA_DEMO.map(d => d.coords), RUTA_DEMO[0].coords] });
 
@@ -561,7 +561,7 @@ onBeforeUnmount(() => {
 }
 
 .truck-card:hover {
-  box-shadow: 3px 3px 0 var(--zun-rojo);
+  box-shadow: 3px 3px 0 var(--acento);
   transform: translate(-2px, -2px);
 }
 
@@ -659,7 +659,7 @@ onBeforeUnmount(() => {
 
 .legend-dot.is-done { background: var(--zun-verde); border-color: var(--zun-verde); }
 .legend-dot.is-absent { border-color: var(--zun-rojo); }
-.legend-dot.is-base { background: var(--zun-negro); border-radius: 3px; }
+.legend-dot.is-base { background: var(--am-noche); border-color: var(--am-noche); border-radius: 3px; }
 
 /* Marcadores del mapa (HTML inyectado fuera del scope del componente) */
 :deep(.truck-marker) {
@@ -750,7 +750,7 @@ onBeforeUnmount(() => {
 
 :deep(.base-marker span) {
   border-radius: 6px;
-  background: #111111;
+  background: #041F26;
   color: #ffffff;
 }
 

@@ -265,8 +265,8 @@ function asignarDespacho(p: Pedido) {
 }
 
 .tag-btn:hover {
-  color: var(--zun-rojo);
-  border-color: var(--zun-rojo);
+  color: var(--acento);
+  border-color: var(--acento);
 }
 
 .tag-btn.active {

@@ -3,9 +3,9 @@
     <!-- Barra lateral de navegación (en móvil pasa a barra inferior) -->
     <aside class="sidebar">
       <RouterLink to="/indicadores" class="brand">
-        <span class="brand-logo"><Droplets :size="20" /></span>
+        <img :src="logoMarca" alt="" class="brand-logo" width="40" height="40" />
         <span class="brand-text">
-          <span class="brand-title">Aguas purificadas</span>
+          <span class="brand-title">AguaMantra</span>
           <span class="brand-sub">Gestión y reparto</span>
         </span>
       </RouterLink>
@@ -85,7 +85,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
-import { ClipboardList, Droplets, LayoutDashboard, MapPinned, RefreshCw, Smartphone, Truck, Warehouse } from 'lucide-vue-next';
+import logoMarca from '../assets/aguamantra-marca.jpg';
+import { ClipboardList, LayoutDashboard, MapPinned, RefreshCw, Smartphone, Truck, Warehouse } from 'lucide-vue-next';
 import FlujoDelDia from '../components/FlujoDelDia.vue';
 import { appStore } from '../store/useAppStore';
 import { notificar } from '../store/useToast';
@@ -144,6 +145,17 @@ const usuario = computed(() => {
   gap: 26px;
 }
 
+/* Franja con el cielo del logo */
+.sidebar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--am-cielo);
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -153,15 +165,18 @@ const usuario = computed(() => {
 }
 
 .brand-logo {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  background: var(--zun-negro);
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  object-fit: cover;
   flex-shrink: 0;
+  box-shadow: 0 0 0 2px var(--zun-blanco), 0 0 0 3px var(--am-hielo);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease;
+}
+
+.brand:hover .brand-logo {
+  transform: rotate(-4deg) scale(1.05);
+  box-shadow: 0 0 0 2px var(--zun-blanco), 0 0 0 3px var(--am-cian);
 }
 
 .brand-text {
@@ -170,12 +185,12 @@ const usuario = computed(() => {
 }
 
 .brand-title {
-  font-family: var(--font-display);
-  font-size: 1.02rem;
-  font-weight: 800;
-  color: var(--zun-negro);
-  letter-spacing: -0.02em;
-  line-height: 1.15;
+  font-family: var(--font-marca);
+  font-size: 1.22rem;
+  font-weight: 700;
+  color: var(--am-noche);
+  letter-spacing: -0.01em;
+  line-height: 1.1;
 }
 
 .brand-sub {
@@ -216,16 +231,17 @@ const usuario = computed(() => {
 }
 
 .side-link:hover {
-  color: var(--zun-rojo);
-  border-color: var(--zun-rojo);
-  box-shadow: 2px 2px 0 var(--zun-rojo);
+  color: var(--acento);
+  border-color: var(--acento);
+  box-shadow: 2px 2px 0 var(--acento);
   transform: translate(-1px, -1px);
 }
 
 .side-link.router-link-active {
-  background: var(--zun-negro);
+  background: var(--am-noche);
   color: #ffffff;
-  border-color: var(--zun-negro);
+  border-color: var(--am-noche);
+  box-shadow: inset 3px 0 0 var(--am-hielo);
 }
 
 .side-icon {
@@ -415,8 +431,8 @@ const usuario = computed(() => {
 }
 
 .stock-pill:hover {
-  border-color: var(--zun-rojo);
-  box-shadow: 2px 2px 0 var(--zun-rojo);
+  border-color: var(--acento);
+  box-shadow: 2px 2px 0 var(--acento);
   transform: translate(-1px, -1px);
 }
 

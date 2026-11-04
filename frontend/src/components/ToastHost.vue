@@ -28,7 +28,7 @@ import { toasts, cerrarToast } from '../store/useToast';
   align-items: flex-start;
   gap: 12px;
   padding: 14px 16px;
-  background: var(--zun-negro);
+  background: var(--am-noche);
   color: #ffffff;
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-modal);

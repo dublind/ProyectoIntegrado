@@ -158,8 +158,8 @@ const totalPendientes = computed(() => porCobrar.value + porAsignar.value + ause
 }
 
 .kpi:hover {
-  border-color: var(--zun-rojo);
-  box-shadow: 3px 3px 0 var(--zun-rojo);
+  border-color: var(--acento);
+  box-shadow: 3px 3px 0 var(--acento);
   transform: translate(-2px, -2px);
 }
 
@@ -279,7 +279,7 @@ const totalPendientes = computed(() => porCobrar.value + porAsignar.value + ause
 }
 
 .link-row:hover {
-  border-color: var(--zun-rojo);
+  border-color: var(--acento);
   background: var(--zun-blanco);
 }
 

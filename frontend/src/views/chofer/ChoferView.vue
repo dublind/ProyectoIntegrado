@@ -21,7 +21,7 @@
 
       <!-- ===================== SIN RUTA ===================== -->
       <main v-if="etapa === 'sin_ruta'" class="screen screen-center">
-        <div class="big-icon"><Truck :size="34" /></div>
+        <img :src="paisaje" alt="" class="empty-art" />
         <h1 class="screen-title">{{ turno.estado === 'finalizado' ? 'Ruta cerrada' : 'Sin ruta asignada' }}</h1>
         <p class="screen-sub">
           {{ turno.estado === 'finalizado'
@@ -263,8 +263,9 @@
 import { computed, ref, watch } from 'vue';
 import {
   AlertTriangle, ArrowLeft, Check, DoorClosed, Map as MapIcon, MapPin, Navigation, PackageOpen, PackageX, Phone, Play, ShieldAlert,
-  Truck, Warehouse, Wifi, WifiOff
+  Warehouse, Wifi, WifiOff
 } from 'lucide-vue-next';
+import paisaje from '../../assets/aguamantra-paisaje.jpg';
 import { appStore } from '../../store/useAppStore';
 import { notificar } from '../../store/useToast';
 import { BODEGA_CENTRAL } from '../../utils/geo';
@@ -432,8 +433,19 @@ function enviarNovedad() {
   align-items: center;
   gap: 12px;
   padding: 14px 16px;
-  background: var(--zun-negro);
+  background: var(--am-noche);
   color: #ffffff;
+}
+
+/* Franja con el cielo del logo AguaMantra */
+.app-bar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--am-cielo);
 }
 
 .icon-btn {
@@ -511,15 +523,14 @@ function enviarNovedad() {
   padding: 48px 28px;
 }
 
-.big-icon {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  background: var(--zun-blanco);
-  border: 1px solid var(--zun-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.empty-art {
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 16px;
+  box-shadow: 0 16px 32px -16px rgba(4, 31, 38, 0.6);
+  margin-bottom: 8px;
 }
 
 .screen-title {
@@ -569,13 +580,18 @@ function enviarNovedad() {
 }
 
 .seg-next {
-  background: var(--zun-negro);
+  background: var(--am-petroleo);
+  animation: seg-pulso 1.6s ease-in-out infinite;
+}
+
+@keyframes seg-pulso {
+  50% { background: var(--am-turquesa); }
 }
 
 /* Tarjeta principal */
 .hero {
   background: var(--zun-blanco);
-  border: 2px solid var(--zun-negro);
+  border: 2px solid var(--am-noche);
   border-radius: 16px;
   padding: 20px;
   display: flex;
@@ -584,9 +600,24 @@ function enviarNovedad() {
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
 }
 
+/* Tarjetas oscuras con el paisaje del logo detrás, muy atenuado */
 .hero-dark {
-  background: var(--zun-negro);
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--am-noche);
+  border-color: var(--am-noche);
   color: #ffffff;
+}
+
+.hero-dark::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(180deg, rgba(4, 31, 38, 0.92) 0%, rgba(4, 31, 38, 0.78) 100%),
+    url('../../assets/aguamantra-paisaje.jpg') center 35% / cover no-repeat;
 }
 
 .hero-head {
@@ -749,7 +780,7 @@ function enviarNovedad() {
 }
 
 .link-btn:hover {
-  color: var(--zun-rojo);
+  color: var(--acento);
 }
 
 /* Carga */

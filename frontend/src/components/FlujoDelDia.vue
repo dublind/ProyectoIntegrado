@@ -84,14 +84,15 @@ const etapas = computed(() => {
 }
 
 .etapa:hover {
-  border-color: var(--zun-rojo);
-  box-shadow: 2px 2px 0 var(--zun-rojo);
+  border-color: var(--acento);
+  box-shadow: 2px 2px 0 var(--acento);
   transform: translate(-1px, -1px);
 }
 
 .etapa.activa {
-  border: 2px solid var(--zun-negro);
+  border: 2px solid var(--am-noche);
   padding: 9px 11px;
+  box-shadow: inset 0 -3px 0 var(--am-dorado);
 }
 
 .etapa-num {
@@ -109,7 +110,7 @@ const etapas = computed(() => {
 }
 
 .tono-rojo .etapa-num { background: var(--zun-rojo); }
-.tono-negro .etapa-num { background: var(--zun-negro); }
+.tono-negro .etapa-num { background: var(--am-petroleo); }
 .tono-verde .etapa-num { background: var(--zun-verde); }
 .tono-amarillo .etapa-num { background: #eab308; }
 .tono-gris .etapa-num { background: var(--zun-gris-medium); }

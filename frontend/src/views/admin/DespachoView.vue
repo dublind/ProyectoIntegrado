@@ -231,7 +231,7 @@ function liquidar() {
 
 .cap-fill {
   height: 100%;
-  background: var(--zun-negro);
+  background: linear-gradient(90deg, var(--am-petroleo), var(--am-turquesa));
   border-radius: 9999px;
   transition: width 0.3s;
 }

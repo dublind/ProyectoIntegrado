@@ -472,7 +472,7 @@ function reset() {
 
 .counter-fill {
   height: 100%;
-  background: var(--zun-negro);
+  background: linear-gradient(90deg, var(--am-petroleo), var(--am-turquesa));
 }
 
 .audit-card .card-title {
