@@ -29,8 +29,9 @@ jobs:
         run: npm run lint || echo "Sintaxis validada"
 
       # Aquí corre las pruebas del pedido mínimo, los 12 bidones y las cuentas
-      - name: Ejecutar Suite de Tests Unitarios (QA)
-        run: npm run test:unit || echo "Tests unitarios validados"
+      - name: Ejecutar pruebas Unitarias (QA)
+        working-directory: ./frontend
+        run: npm run test:unit
 
   deploy-to-staging:
     name: Despliegue Automático a Entorno de Pruebas
