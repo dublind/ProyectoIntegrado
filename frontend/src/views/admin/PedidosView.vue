@@ -69,8 +69,8 @@
             <td data-label="Acción">
               <div class="action-buttons">
                 <template v-if="p.estado === 'pendiente_pago'">
-                  <button v-if="p.medioPago === 'webpay'" @click="simularWebpay(p)" class="btn btn-secondary btn-sm"
-                    title="Simular confirmación de webhook Transbank">
+                  <button v-if="p.medioPago === 'webpay'" @click="Webpay(p)" class="btn btn-secondary btn-sm"
+                    title="Simular confirmación de pago Webpay">
                     Confirmar Webpay
                   </button>
                   <button v-else @click="abrirModalTransferencia(p)" class="btn btn-secondary btn-sm">
@@ -212,7 +212,7 @@ const pedidosFiltrados = computed(() => {
   });
 });
 
-function simularWebpay(p: Pedido) {
+function Webpay(p: Pedido) {
   appStore.simularPagoWebpay(p.id);
   notificar(`Pago Webpay de ${p.codigo} confirmado. Listo para asignar a ruta.`, 'exito');
 }
