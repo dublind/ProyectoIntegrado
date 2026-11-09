@@ -714,6 +714,36 @@ class AppStore {
     }
   }
 
+  async iniciarPagoWebpayReal(pedidoId: string, montoPedido: number) {
+    try {
+      const respuesta = await fetch('/api/payments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id_pedido: pedidoId,
+          medio: 'WEBPAY',
+          monto: montoPedido
+        }),
+      });
+
+      if (!respuesta.ok) {
+        throw new Error('Error al conectar con el servidor de pagos');
+      }
+
+      const data = await respuesta.json();
+
+      if (data.url_webpay) {
+        window.location.href = data.url_webpay;
+      } else {
+        console.error('El servidor no retornó un link válido de Webpay.');
+      }
+    } catch (error) {
+      console.error('Error al iniciar el pago con Webpay:', error);
+    }
+  }
+
   // Todas las transferencias se abonan a la cuenta única de la empresa (sin rotación entre cuentas)
   validarTransferenciaManual(pedidoId: string, archivoComprobante = 'comprobante_transferencia.jpg') {
     const pedido = this.state.pedidos.find(p => p.id === pedidoId);

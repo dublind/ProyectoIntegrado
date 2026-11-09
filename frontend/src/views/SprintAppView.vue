@@ -41,11 +41,29 @@ async function logout(){await run(async()=>{await api('/auth/logout','POST',{});
 function selectClient(c:Row){clientId.value=c.id_cliente;editingClient.value=c.id_cliente;clientForm.value={nombre:c.nombre,telefono:c.telefono??'',rut:c.rut??'',email:c.email??''};addressForm.value.id_cliente=c.id_cliente;}
 function newClient(){editingClient.value=0;clientForm.value={nombre:'',telefono:'',rut:'',email:''};}
 async function saveClient(){await run(async()=>{const c=await api('/clients'+(editingClient.value?'/'+editingClient.value:''),editingClient.value?'PATCH':'POST',clientForm.value);clientId.value=c.id_cliente;addressForm.value.id_cliente=c.id_cliente;editingClient.value=c.id_cliente;});}
+async function simularWebpay(idPedido: number, montoPedido: number) {
+  await run(
+    () => api('/payments', 'POST', {
+      id_pedido: idPedido,
+      medio: 'WEBPAY',
+      monto: montoPedido,
+      evento: event()
+    }),
+    'Pago Webpay simulado; queda pendiente de confirmación'
+  );
+}
+
 function editAddress(d:Row){editingAddress.value=d.id_direccion;addressForm.value={id_cliente:d.id_cliente,etiqueta:d.etiqueta,calle:d.calle,numero:d.numero??'',comuna:d.comuna??'',ciudad:d.ciudad??'Santiago',latitud:d.latitud,longitud:d.longitud};}
 async function saveAddress(){await run(async()=>{await api('/addresses'+(editingAddress.value?'/'+editingAddress.value:''),editingAddress.value?'PATCH':'POST',addressForm.value);editingAddress.value=0;addressForm.value={id_cliente:clientId.value,etiqueta:'Domicilio',calle:'',numero:'',comuna:'',ciudad:'Santiago',latitud:null,longitud:null};});}
 function prefill(){const last=state.value?.pedidos.find(p=>p.id_cliente===orderForm.value.id_cliente);orderForm.value.id_direccion=last?.id_direccion_entrega??orderAddresses.value[0]?.id_direccion??0;orderForm.value.cantidad=last?.cantidad??2;orderForm.value.tipo_producto=last?.tipo_producto??'Bidón de agua purificada 20L';}
 function choosePayment(){const p=state.value?.pedidos.find(p=>p.id_pedido===paymentForm.value.id_pedido);paymentForm.value.monto=p?Math.max(0,Number(p.cantidad*p.precio_unitario)-Number(p.pagado)):0;}
-async function savePayment(){await run(()=>api('/payments','POST',{...paymentForm.value,evento:event()}),'Pago registrado para revisión');}
+async function savePayment(){
+  if(paymentForm.value.medio==='WEBPAY'){
+    await simularWebpay(paymentForm.value.id_pedido,paymentForm.value.monto);
+    return;
+  }
+  await run(()=>api('/payments','POST',{...paymentForm.value,evento:event()}),'Pago registrado para revisión');
+}
 async function validatePayment(p:Row,status:string){let reason='';if(status==='RECHAZADO'){reason=prompt('Motivo del rechazo')??'';if(!reason)return;}await run(()=>api(`/payments/${p.id_pago}/validate`,'POST',{estado:status,motivo:reason}),'Pago revisado; despacho actualizado si corresponde');}
 async function authorize(p:Row,decision:string){const reason=prompt('Describe la coordinación por WhatsApp o la autorización sin retorno');if(!reason)return;await run(()=>api(`/orders/${p.id_pedido}/authorize`,'POST',{decision,motivo:reason}));}
 function editVehicle(v:Row){editingVehicle.value=v.id;vehicleForm.value={patente:v.patente,modelo:v.modelo,capacidad:v.capacidad};}
