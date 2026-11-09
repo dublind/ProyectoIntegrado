@@ -1,5 +1,15 @@
 import { reactive, computed } from 'vue';
-import type { Cliente, Pedido, Vehiculo, TurnoDespacho, CuentaBancaria, InventarioBodega, MedioPago } from '../types';
+import type {
+  Cliente,
+  Pedido,
+  Vehiculo,
+  TurnoDespacho,
+  CuentaBancaria,
+  InventarioBodega,
+  MedioPago,
+  RegistroRotura,
+  NotificacionInterna
+} from '../types';
 
 const STORAGE_KEY = 'agua_purificada_mvp_store';
 
@@ -218,6 +228,20 @@ const inventarioInicial: InventarioBodega = {
   bajasDefinitivas60d: 5
 };
 
+function crearRegistrosRoturasPrevias(cantidad: number): RegistroRotura[] {
+  return Array.from({ length: Math.max(0, cantidad) }, (_, index) => ({
+    id: `rotura-previa-${index + 1}`,
+    pedidoId: '',
+    codigoPedido: 'Registro previo',
+    clienteNombre: 'Sin detalle disponible',
+    producto: 'Agua Purificada 20L Sellada',
+    cantidad: 1,
+    detalle: 'Merma inicial de datos demo sin detalle individual.',
+    fecha: '2026-10-06T00:00:00.000Z',
+    estado: 'pendiente_baja'
+  }));
+}
+
 class AppStore {
   state = reactive({
     clientes: [...clientesIniciales],
@@ -226,6 +250,8 @@ class AppStore {
     cuentasBancarias: [...cuentasBancariasIniciales],
     turnoActivo: { ...turnoActivoInicial },
     inventario: { ...inventarioInicial },
+    roturasBodega: crearRegistrosRoturasPrevias(inventarioInicial.rotosBodega),
+    notificacionesInternas: [] as NotificacionInterna[],
     notificacionRotacion: null as string | null,
     modoOffline: false
   });
@@ -247,8 +273,19 @@ class AppStore {
     try {
       const data = localStorage.getItem(STORAGE_KEY);
       if (data) {
-        const parsed = JSON.parse(data);
+        const parsed = JSON.parse(data) as Partial<typeof this.state>;
         Object.assign(this.state, parsed);
+        if (!Array.isArray(parsed.roturasBodega)) {
+          this.state.roturasBodega = crearRegistrosRoturasPrevias(this.state.inventario.rotosBodega);
+        } else {
+          this.state.roturasBodega = this.state.roturasBodega.map(rotura => ({
+            ...rotura,
+            cantidad: Number.isInteger(rotura.cantidad) && rotura.cantidad > 0 ? rotura.cantidad : 1
+          }));
+        }
+        if (!Array.isArray(parsed.notificacionesInternas)) {
+          this.state.notificacionesInternas = [];
+        }
       }
     } catch (e) {
       console.warn('No se pudo cargar desde localStorage', e);
@@ -268,6 +305,9 @@ class AppStore {
     const deudaTotalClientes = this.state.clientes.reduce((acc, c) => acc + (c.deudaEnvases || 0), 0);
     this.state.inventario.pendientesDevolucion = deudaTotalClientes;
 
+    this.state.inventario.rotosBodega = this.state.roturasBodega
+      .filter(rotura => rotura.estado === 'pendiente_baja')
+      .reduce((total, rotura) => total + rotura.cantidad, 0);
     this.guardarEnLocalStorage();
   }
 
@@ -289,7 +329,6 @@ class AppStore {
   alertasPendientesCount = computed(() => {
     return this.state.pedidos.filter(p => p.tieneAlertaDeuda || p.incidencia?.tipo === 'pendiente').length;
   });
-
   // Acciones Administrativo (Tarea #48)
   buscarClientes(termino: string) {
     if (!termino.trim()) return [];
@@ -299,6 +338,98 @@ class AppStore {
       c.telefono.includes(t) || 
       c.direccion.toLowerCase().includes(t)
     );
+  }
+
+  registrarRoturaViaje(params: {
+    pedidoId: string;
+    cantidad: number;
+    detalle: string;
+    aceptaEntregaParcial: boolean;
+  }) {
+    const pedido = this.state.pedidos.find(p => p.id === params.pedidoId);
+    if (!pedido || pedido.estado !== 'en_despacho') return;
+    if (!Number.isInteger(params.cantidad) || params.cantidad <= 0) {
+      throw new Error('La cantidad de botellones rotos debe ser un entero positivo.');
+    }
+
+    const fecha = new Date().toISOString();
+    const eventoId = `${Date.now()}-${this.state.notificacionesInternas.length + 1}`;
+
+    const nuevoReporte: RegistroRotura = {
+      id: `rotura-viaje-${eventoId}`,
+      pedidoId: pedido.id,
+      codigoPedido: pedido.codigo,
+      clienteNombre: pedido.clienteNombre,
+      producto: pedido.tipoProducto,
+      cantidad: params.cantidad,
+      detalle: `${params.detalle}${params.aceptaEntregaParcial ? ' Entrega parcial aceptada.' : ''}`,
+      fecha,
+      estado: 'pendiente_baja'
+    };
+    this.state.roturasBodega.unshift(nuevoReporte);
+
+    pedido.incidencia = {
+      tipo: 'roto',
+      detalle: params.detalle,
+      fecha,
+      resuelto: false
+    };
+    pedido.estado = 'parcial';
+    pedido.tieneAlertaDeuda = params.aceptaEntregaParcial;
+    this.state.turnoActivo.botellonesCargados = Math.max(
+      0,
+      this.state.turnoActivo.botellonesCargados - params.cantidad
+    );
+
+    this.agregarAvisosRotura(pedido.id, pedido.codigo, pedido.clienteNombre, params.cantidad, params.detalle, fecha, eventoId);
+  }
+
+  autorizarBajaFisica(reporteId: string) {
+    const reporte = this.state.roturasBodega.find(r => r.id === reporteId);
+    if (!reporte || reporte.estado !== 'pendiente_baja') return;
+    const confirmar = confirm(`¿Confirmar inspección física y autorizar baja definitiva?`);
+
+    if (confirmar) {
+      reporte.estado = 'baja_definitiva';
+      this.state.inventario.bajasDefinitivas60d += reporte.cantidad;
+      this.sincronizarInventario();
+    }
+  }
+
+  private agregarAvisosRotura(
+    pedidoId: string,
+    codigoPedido: string,
+    clienteNombre: string,
+    cantidad: number,
+    detalle: string,
+    fecha: string,
+    eventoId: string
+  ) {
+    this.state.notificacionesInternas.unshift(
+      {
+        id: `notificacion-${eventoId}-administrador`,
+        tipo: 'rotura',
+        destinatario: 'administrador',
+        pedidoId,
+        clienteNombre,
+        titulo: `Rotura informada en ${codigoPedido}`,
+        mensaje: `Se registraron ${cantidad} botellón(es) dañado(s) en el trayecto. Detalle: ${detalle}`,
+        fecha,
+        leida: false
+      },
+      {
+        id: `notificacion-${eventoId}-cliente`,
+        tipo: 'rotura',
+        destinatario: 'cliente',
+        pedidoId,
+        clienteNombre,
+        titulo: `Novedad en tu pedido ${codigoPedido}`,
+        mensaje: `Lamentamos informar que, debido a un incidente en ruta, reprogramaremos la entrega de ${cantidad} botellón(es) para el siguiente turno sin costo adicional.`,
+        fecha,
+        leida: false
+      }
+    );
+    this.sincronizarInventario();
   }
 
   obtenerHistorialCliente(clienteId: string) {
@@ -359,7 +490,6 @@ class AppStore {
 
     this.state.pedidos.unshift(nuevoPedido);
     
-    // Actualizar último pedido en cliente para futuro prellenado
     cliente.ultimoPedido = {
       cantidadBidones: datos.cantidadBidones,
       tipoProducto: datos.tipoProducto,
@@ -385,7 +515,6 @@ class AppStore {
     pedido.estado = 'pagado';
     pedido.comprobanteTransferencia = archivoComprobante;
     
-    // Algoritmo de rotación de cuenta bancaria al acumular 45 comprobantes
     const cta = this.cuentaActiva.value;
     cta.comprobantesProcesados += 1;
     pedido.cuentaBancariaId = cta.id;
@@ -405,12 +534,12 @@ class AppStore {
     cuentas.forEach((c, idx) => {
       c.activa = (idx === siguienteIdx);
       if (idx === siguienteIdx) {
-        c.comprobantesProcesados = 0; // Reinicia contador para nueva cuenta activa
+        c.comprobantesProcesados = 0;
       }
     });
 
     const nueva = cuentas[siguienteIdx];
-    this.state.notificacionRotacion = `¡Atención! La cuenta ${cuentas[idxActual].banco} alcanzó 45 comprobantes. Se conmutó automáticamente a ${nueva.banco} (${nueva.tipoCuenta} ${nueva.numeroCuenta}).`;
+    this.state.notificacionRotacion = `¡Atención! La cuenta ${cuentas[idxActual].banco} alcanzó 45 comprobantes. Se conmutó automáticamente a ${nueva.banco}.`;
   }
 
   asignarPedidoADespacho(pedidoId: string) {
@@ -420,14 +549,13 @@ class AppStore {
 
     const nuevaCarga = turno.botellonesCargados + pedido.cantidadBidones;
     if (nuevaCarga > turno.capacidadMax) {
-      throw new Error(`Excede la capacidad máxima del furgón (${turno.capacidadMax} botellones). Carga actual: ${turno.botellonesCargados}.`);
+      throw new Error(`Excede la capacidad máxima del furgón.`);
     }
 
     turno.pedidosIds.push(pedidoId);
     turno.botellonesCargados = nuevaCarga;
     pedido.estado = 'en_despacho';
 
-    // Se descuentan de bodega central (llenos) y suben al furgón (en tránsito)
     this.state.inventario.llenosCentral -= pedido.cantidadBidones;
     this.sincronizarInventario();
   }
@@ -439,7 +567,6 @@ class AppStore {
 
     pedido.estado = 'entregado';
     
-    // Si tenía deuda pendiente previa y el cliente devolvió el envase
     if (pedido.deudaEnvasesPendiente > 0) {
       const cliente = this.state.clientes.find(c => c.id === pedido.clienteId);
       if (cliente) {
@@ -454,17 +581,18 @@ class AppStore {
 
   reportarIncidenciaChofer(pedidoId: string, tipo: 'pendiente' | 'ausente' | 'roto', detalle: string) {
     const pedido = this.state.pedidos.find(p => p.id === pedidoId);
-    if (!pedido) return;
+    if (!pedido || pedido.estado !== 'en_despacho') return;
+
+    const fecha = new Date().toISOString();
 
     pedido.incidencia = {
       tipo,
       detalle,
-      fecha: new Date().toLocaleTimeString('es-CL'),
+      fecha,
       resuelto: false
     };
 
     if (tipo === 'pendiente') {
-      // Se entregó el bidón pero el cliente no entregó el envase vacío -> genera deuda en ficha cliente
       pedido.estado = 'entregado';
       const cliente = this.state.clientes.find(c => c.id === pedido.clienteId);
       if (cliente) {
@@ -472,72 +600,89 @@ class AppStore {
       }
       pedido.tieneAlertaDeuda = true;
       pedido.deudaEnvasesPendiente = (pedido.deudaEnvasesPendiente || 0) + 1;
+      this.sincronizarInventario();
     } else if (tipo === 'ausente') {
-      // Cliente no estaba -> no se entrega y sigue en furgón para reprogramación
       pedido.estado = 'ausente';
-    } else if (tipo === 'roto') {
-      // Fisurado en furgón -> merma física entra a bodega de rotos
-      pedido.estado = 'parcial';
-      this.state.inventario.rotosBodega += 1;
-      this.state.turnoActivo.botellonesCargados = Math.max(0, this.state.turnoActivo.botellonesCargados - 1);
+      this.sincronizarInventario();
+    } else {
+      this.registrarRoturaViaje({
+        pedidoId,
+        cantidad: 1,
+        detalle,
+        aceptaEntregaParcial: true
+      });
     }
-
-    this.sincronizarInventario();
   }
 
-  // Liquidación del furgón al retornar a bodega central (descarga de vacíos y cuadratura física)
   liquidarRetornoFurgonCentral() {
     const pedidos = this.state.pedidos.filter(p => this.state.turnoActivo.pedidosIds.includes(p.id));
-    
-    // Vacíos recolectados de pedidos entregados entran a bodega central de vacíos
     const vaciosRecolectados = pedidos
       .filter(p => p.estado === 'entregado' && p.incidencia?.tipo !== 'pendiente')
       .reduce((sum, p) => sum + p.cantidadBidones, 0);
-
-    // Llenos no entregados (ausente) reingresan a bodega central de llenos
     const llenosNoEntregados = pedidos
       .filter(p => p.estado === 'ausente')
       .reduce((sum, p) => sum + p.cantidadBidones, 0);
 
     this.state.inventario.vaciosCentral += vaciosRecolectados;
     this.state.inventario.llenosCentral += llenosNoEntregados;
-    
-    // Furgón descarga por completo al finalizar su turno
     this.state.turnoActivo.botellonesCargados = 0;
     this.state.turnoActivo.pedidosIds = [];
     this.state.turnoActivo.estado = 'finalizado';
+    this.sincronizarInventario();
+  }
+
+  sanitizarYRecargar(cantidad = 20) {
+    const cantidadRecargada = Math.min(this.state.inventario.vaciosCentral, cantidad);
+    if (cantidadRecargada <= 0) return;
+
+    this.state.inventario.vaciosCentral -= cantidadRecargada;
+    this.state.inventario.llenosCentral += cantidadRecargada;
+    this.sincronizarInventario();
+  }
+
+  autorizarBajaRotoAdmin(cantidad = 1) {
+    if (!Number.isInteger(cantidad) || cantidad <= 0) return;
+
+    let restante = cantidad;
+    for (const rotura of this.state.roturasBodega) {
+      if (rotura.estado !== 'pendiente_baja' || restante === 0) continue;
+
+      const autorizada = Math.min(rotura.cantidad, restante);
+      if (autorizada === rotura.cantidad) {
+        rotura.estado = 'baja_definitiva';
+      } else {
+        rotura.cantidad -= autorizada;
+        this.state.roturasBodega.push({
+          ...rotura,
+          id: `${rotura.id}-baja-${Date.now()}`,
+          cantidad: autorizada,
+          estado: 'baja_definitiva'
+        });
+      }
+      restante -= autorizada;
+      this.state.inventario.bajasDefinitivas60d += autorizada;
+    }
 
     this.sincronizarInventario();
   }
 
-  // Recarga/Lavado de botellones en planta (vacíos a llenos)
-  sanitizarYRecargar(cantidad = 20) {
-    const cant = Math.min(this.state.inventario.vaciosCentral, cantidad);
-    if (cant > 0) {
-      this.state.inventario.vaciosCentral -= cant;
-      this.state.inventario.llenosCentral += cant;
-      this.sincronizarInventario();
-    }
-  }
+  marcarNotificacionLeida(notificacionId: string) {
+    const notificacion = this.state.notificacionesInternas.find(item => item.id === notificacionId);
+    if (!notificacion) return;
 
-  // Exclusivo Administrador / Erick: Autorizar baja definitiva física
-  autorizarBajaRotoAdmin(cantidad = 1) {
-    if (this.state.inventario.rotosBodega >= cantidad) {
-      this.state.inventario.rotosBodega -= cantidad;
-      this.state.inventario.bajasDefinitivas60d += cantidad;
-      this.sincronizarInventario();
-    }
+    notificacion.leida = true;
+    this.guardarEnLocalStorage();
   }
 
   cambiarCapacidadVehiculo(vehiculoId: string, nuevaCapacidad: number) {
-    const vehiculo = this.state.vehiculos.find(v => v.id === vehiculoId);
-    if (vehiculo) {
-      vehiculo.capacidadMax = nuevaCapacidad;
-      if (this.state.turnoActivo.vehiculoId === vehiculoId) {
-        this.state.turnoActivo.capacidadMax = nuevaCapacidad;
-      }
-      this.guardarEnLocalStorage();
+    const vehiculo = this.state.vehiculos.find(item => item.id === vehiculoId);
+    if (!vehiculo) return;
+
+    vehiculo.capacidadMax = nuevaCapacidad;
+    if (this.state.turnoActivo.vehiculoId === vehiculoId) {
+      this.state.turnoActivo.capacidadMax = nuevaCapacidad;
     }
+    this.guardarEnLocalStorage();
   }
 
   resetDemoData() {
@@ -548,9 +693,10 @@ class AppStore {
     this.state.cuentasBancarias = JSON.parse(JSON.stringify(cuentasBancariasIniciales));
     this.state.turnoActivo = JSON.parse(JSON.stringify(turnoActivoInicial));
     this.state.inventario = JSON.parse(JSON.stringify(inventarioInicial));
+    this.state.roturasBodega = crearRegistrosRoturasPrevias(inventarioInicial.rotosBodega);
+    this.state.notificacionesInternas = [];
     this.state.notificacionRotacion = null;
     this.sincronizarInventario();
   }
 }
-
 export const appStore = new AppStore();

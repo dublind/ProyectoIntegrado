@@ -52,6 +52,30 @@ export interface Pedido {
   };
 }
 
+export interface RegistroRotura {
+  id: string;
+  pedidoId: string;
+  codigoPedido: string;
+  clienteNombre: string;
+  producto: string;
+  cantidad: number;
+  detalle: string;
+  fecha: string;
+  estado: 'pendiente_baja' | 'baja_definitiva';
+}
+
+export interface NotificacionInterna {
+  id: string;
+  tipo: 'rotura';
+  destinatario: 'administrador' | 'cliente';
+  pedidoId: string;
+  clienteNombre: string;
+  titulo: string;
+  mensaje: string;
+  fecha: string;
+  leida: boolean;
+}
+
 export interface Vehiculo {
   id: string;
   patente: string;

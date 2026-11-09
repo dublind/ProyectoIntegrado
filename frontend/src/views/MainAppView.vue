@@ -48,6 +48,11 @@
             appStore.state.inventario.enTransito }} en ruta)</span>
         </div>
 
+        <button class="notification-button" @click="mostrarNotificaciones = true">
+          <span>🔔 Avisos</span>
+          <span v-if="notificacionesNoLeidas > 0" class="notification-count">{{ notificacionesNoLeidas }}</span>
+        </button>
+
         <!-- Usuario Operativo -->
         <div class="profile-chip">
           <div class="profile-avatar">{{ usuarioActual.avatar }}</div>
@@ -58,6 +63,40 @@
         </div>
       </div>
     </header>
+
+    <div v-if="mostrarNotificaciones" class="modal-overlay" @click.self="mostrarNotificaciones = false">
+      <section class="modal-content notifications-modal" role="dialog" aria-modal="true"
+        aria-labelledby="notifications-title">
+        <div class="modal-header">
+          <h2 id="notifications-title">Avisos internos</h2>
+          <button @click="mostrarNotificaciones = false" class="btn-close" aria-label="Cerrar">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="notification-notice">
+            Avisos de demostración guardados en este navegador; no se envían por correo ni llegan a una cuenta externa.
+          </p>
+          <div v-if="appStore.state.notificacionesInternas.length" class="notification-list">
+            <article v-for="notificacion in appStore.state.notificacionesInternas" :key="notificacion.id"
+              :class="['notification-item', { 'notification-read': notificacion.leida }]">
+              <div class="notification-item-head">
+                <span class="badge" :class="notificacion.destinatario === 'administrador' ? 'badge-primary' : 'badge-warning'">
+                  Para {{ notificacion.destinatario === 'administrador' ? 'administración' : `cliente: ${notificacion.clienteNombre}` }}
+                </span>
+                <span class="text-xs text-muted">{{ formatFechaNotificacion(notificacion.fecha) }}</span>
+              </div>
+              <strong>{{ notificacion.titulo }}</strong>
+              <p>{{ notificacion.mensaje }}</p>
+              <button v-if="!notificacion.leida" class="btn btn-secondary btn-sm"
+                @click="appStore.marcarNotificacionLeida(notificacion.id)">
+                Marcar como leído
+              </button>
+              <span v-else class="notification-read-label">Leído</span>
+            </article>
+          </div>
+          <p v-else class="notification-empty">No hay avisos de rotura.</p>
+        </div>
+      </section>
+    </div>
 
     <!-- Alerta Global de Rotación de Cuenta si se conmutó -->
     <div v-if="appStore.state.notificacionRotacion" class="alert-banner">
@@ -445,6 +484,32 @@
           </div>
         </div>
 
+        <section class="card breakage-records">
+          <div class="breakage-records-head">
+            <div>
+              <h3>Registro de la bodega de rotos</h3>
+              <p class="text-sm text-muted">Cada rotura queda registrada hasta que administración autorice su baja definitiva.</p>
+            </div>
+            <span class="badge badge-danger">{{ appStore.state.inventario.rotosBodega }} pendientes de baja</span>
+          </div>
+          <div v-if="appStore.state.roturasBodega.length" class="breakage-list">
+            <article v-for="rotura in appStore.state.roturasBodega" :key="rotura.id" class="breakage-item">
+              <div class="breakage-item-head">
+                <strong>{{ rotura.producto }}</strong>
+                <span :class="['badge', rotura.estado === 'pendiente_baja' ? 'badge-danger' : 'badge-neutral']">
+                  {{ rotura.estado === 'pendiente_baja' ? 'Pendiente de baja' : 'Baja definitiva autorizada' }}
+                </span>
+              </div>
+              <div class="text-sm text-muted">
+                {{ rotura.codigoPedido }}<span v-if="rotura.clienteNombre !== 'Sin detalle disponible'"> · {{ rotura.clienteNombre }}</span>
+                · {{ formatFechaNotificacion(rotura.fecha) }}
+              </div>
+              <p class="text-sm">{{ rotura.detalle }}</p>
+            </article>
+          </div>
+          <p v-else class="notification-empty">No hay roturas registradas en bodega.</p>
+        </section>
+
         <!-- Barra de Auditoría de Sincronización en Tiempo Real entre Módulos -->
         <div class="card sync-audit-card">
           <div class="sync-card-head">
@@ -701,7 +766,7 @@
             <button @click="ejecutarIncidencia('roto')" class="btn-exception-option">
               <div class="opt-icon">💥</div>
               <div class="opt-text">
-                <strong>Botellón roto en trayecto</strong>
+                <strong>Informar rotura</strong>
                 <span>Fisurado en furgón. Entrega parcial aceptada por el cliente. Entra a bodega de rotos.</span>
               </div>
             </button>
@@ -753,6 +818,10 @@ import type { Pedido } from '../types';
 
 // Módulo activo en la aplicación unificada
 const moduloActivo = ref<'pedidos' | 'despacho' | 'chofer' | 'bodegas'>('pedidos');
+const mostrarNotificaciones = ref(false);
+const notificacionesNoLeidas = computed(() =>
+  appStore.state.notificacionesInternas.filter(notificacion => !notificacion.leida).length
+);
 
 // Usuario según el módulo
 const usuarioActual = computed(() => {
@@ -982,6 +1051,10 @@ function ejecutarIncidencia(tipo: 'pendiente' | 'ausente' | 'roto') {
   };
   appStore.reportarIncidenciaChofer(modalIncidenciaPedido.value.id, tipo, mapDetalle[tipo]);
   modalIncidenciaPedido.value = null;
+}
+
+function formatFechaNotificacion(fecha: string) {
+  return new Date(fecha).toLocaleString('es-CL');
 }
 
 function liquidarFurgon() {
@@ -2243,5 +2316,111 @@ function toggleOffline() {
   font-size: 0.8rem;
   color: var(--zun-gris);
   line-height: 1.45;
+}
+
+.notification-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: 1px solid var(--zun-border);
+  border-radius: var(--radius-pill);
+  background: var(--zun-blanco);
+  color: var(--zun-text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.notification-button:hover {
+  border-color: var(--zun-rojo);
+}
+
+.notification-count {
+  min-width: 20px;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--zun-rojo);
+  color: var(--zun-blanco);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.notifications-modal {
+  max-width: 680px;
+}
+
+.notification-notice {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--zun-ambar-light);
+  color: #78350f;
+  font-size: 0.82rem;
+}
+
+.notification-list,
+.breakage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.notification-item,
+.breakage-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--zun-border);
+  border-radius: var(--radius-sm);
+  background: var(--zun-blanco);
+}
+
+.notification-item.notification-read {
+  opacity: 0.72;
+}
+
+.notification-item-head,
+.breakage-records-head,
+.breakage-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.notification-item p,
+.breakage-item p {
+  color: var(--zun-gris-dark);
+  font-size: 0.86rem;
+}
+
+.notification-read-label,
+.notification-empty {
+  color: var(--zun-gris);
+  font-size: 0.82rem;
+}
+
+.breakage-records {
+  margin-bottom: 28px;
+  padding: 24px;
+}
+
+.breakage-records-head {
+  margin-bottom: 16px;
+}
+
+.breakage-records-head h3 {
+  margin-bottom: 4px;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+}
+
+.breakage-item-head strong {
+  color: var(--zun-negro);
+  font-size: 0.9rem;
 }
 </style>
