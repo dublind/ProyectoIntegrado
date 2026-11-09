@@ -44,9 +44,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Desplegar en Servidor de Pruebas (Staging)
-        env:
-          WEBPAY_COMMERCE_CODE: "597020000540"
-          WHATSAPP_MOCK_TOKEN: "EAAGb0023_MOCK_TOKEN_WHATSAPP_META_XYZ"
         run: |
           echo "Desplegando MVP de Agua Purificada en el entorno de pruebas..."
           echo "Simulación de despliegue en staging completada."
