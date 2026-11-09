@@ -3,9 +3,10 @@ name: Pipeline CI/CD - MVP Distribución de Agua
 
 on:
   push:
-    branches: [main, testing, 'fix/bug100-qa-ainelyn']
+    branches: [main, testing, 'fix/bug100-qa-ainelyn', 'test/bug100-fallo-controlado']
   pull_request:
-    branches: [main, testing]
+    branches: [main, testing, 'fix/bug100-qa-ainelyn']
+
 
 jobs:
   build-and-test:
@@ -45,8 +46,8 @@ jobs:
 
       - name: Desplegar en Servidor de Pruebas (Staging)
         env:
-          WEBPAY_COMMERCE_CODE: "597020000540"
-          WHATSAPP_MOCK_TOKEN: "EAAGb0023_MOCK_TOKEN_WHATSAPP_META_XYZ"
+            WEBPAY_COMMERCE_CODE: ${{ vars.WEBPAY_COMMERCE_CODE }}
+            WHATSAPP_MOCK_TOKEN: ${{ secrets.WHATSAPP_MOCK_TOKEN }}
         run: |
           echo "Desplegando MVP de Agua Purificada en el entorno de pruebas..."
           echo "Simulación de despliegue en staging completada."
