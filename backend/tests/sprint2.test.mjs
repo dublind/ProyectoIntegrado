@@ -305,6 +305,48 @@ test('PBI 67/76: retiro pendiente alerta una vez con fecha, pasa a no retornados
   assert.equal(state.retornos.find((r) => r.id === pending.id).estado, 'no_retornaron');
   assert.equal(await notices(`no-retornaron-${pending.id}`), 1);
 
+  // Retiro parcial: se devuelve 1 de los 2 botellones pendientes.
+  const eventoParcial = randomUUID();
+
+  await call(
+    `/returns/${pending.id}/collect`,
+    'POST',
+    { cantidad: 1, evento: eventoParcial },
+    'chofer',
+  );
+
+  // Repetir la misma solicitud no debe descontar otro botellón.
+  await call(
+    `/returns/${pending.id}/collect`,
+    'POST',
+    { cantidad: 1, evento: eventoParcial },
+    'chofer',
+  );
+
+  // La deuda disminuye, pero la incidencia sigue abierta.
+  state = await call('/state');
+
+  const retornoParcial = state.retornos.find((r) => r.id === pending.id);
+
+  assert.equal(retornoParcial.cantidad, 1);
+  assert.equal(retornoParcial.estado, 'no_retornaron');
+
+  // La alerta debe permanecer activa.
+  assert.ok(
+    state.avisos.some(
+      (a) => a.tipo === 'RETIRO_PENDIENTE' && a.pedido_id === p.id_pedido,
+    ),
+  );
+
+  // El movimiento físico debe registrarse una sola vez.
+  assert.equal(
+    await count(
+      'SELECT COUNT(*)::INT n FROM movimiento_inventario WHERE evento=$1',
+      [eventoParcial],
+    ),
+    1,
+  );
+
   // Retirarlo en la ruta resuelve la alerta y registra el retorno físico una vez
   await call(`/returns/${pending.id}/collect`, 'POST', {}, 'chofer');
   await call(`/returns/${pending.id}/collect`, 'POST', {}, 'chofer');
