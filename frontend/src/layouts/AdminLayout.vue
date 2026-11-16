@@ -20,8 +20,8 @@
           </span>
         </RouterLink>
 
-        <span class="nav-section">Terreno</span>
-        <RouterLink to="/chofer" class="side-link side-link-driver">
+        <span v-if="session.user?.rol === 'administrador'" class="nav-section">Terreno</span>
+        <RouterLink v-if="session.user?.rol === 'administrador'" to="/chofer" class="side-link side-link-driver">
           <Smartphone :size="18" class="side-icon" />
           <span class="side-label label-long">App del chofer</span>
           <span class="side-label label-short">Chofer</span>
@@ -35,6 +35,9 @@
           <span class="profile-name">{{ usuario.nombre }}</span>
           <span class="profile-role">{{ usuario.rol }}</span>
         </div>
+        <button type="button" class="logout-btn" title="Cerrar sesión" aria-label="Cerrar sesión" @click="salir">
+          <LogOut :size="16" />
+        </button>
       </div>
     </aside>
 
@@ -57,6 +60,9 @@
           :title="appStore.auditoria.value.ok ? 'Todos los módulos cuadran' : 'Hay un descuadre: revisa Inventario'">
           {{ appStore.auditoria.value.ok ? 'Cuadratura OK' : 'Descuadre' }}
         </RouterLink>
+        <button type="button" class="logout-btn logout-mobile" title="Cerrar sesión" aria-label="Cerrar sesión" @click="salir">
+          <LogOut :size="16" />
+        </button>
         <RouterLink to="/inventario" class="stock-pill" title="Ecuación de cuadratura continua de stock">
           <span class="stock-dot"></span>
           <span class="stock-label">Stock total</span>
@@ -73,6 +79,7 @@
             <h2 id="avisos-title">Avisos internos</h2>
             <button type="button" class="btn-close" aria-label="Cerrar" @click="mostrarAvisos = false">&times;</button>
           </div>
+          <div class="modal-body">
           <p class="avisos-nota">Avisos guardados en este navegador; no se envían por correo ni WhatsApp.</p>
           <div v-if="appStore.state.notificacionesInternas.length" class="avisos-lista">
             <article v-for="n in appStore.state.notificacionesInternas" :key="n.id"
@@ -91,6 +98,7 @@
             </article>
           </div>
           <p v-else class="text-sm text-muted">No hay avisos de rotura.</p>
+          </div>
         </section>
       </div>
 
@@ -108,9 +116,10 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+import { cerrarSesion, ETIQUETA_ROL, session } from '../store/useSession';
 import logoMarca from '../assets/aguamantra-marca.jpg';
-import { Bell, ClipboardList, LayoutDashboard, MapPinned, Smartphone, Truck, Warehouse } from 'lucide-vue-next';
+import { Bell, LogOut, ClipboardList, LayoutDashboard, MapPinned, Smartphone, Truck, Warehouse } from 'lucide-vue-next';
 import FlujoDelDia from '../components/FlujoDelDia.vue';
 import { appStore } from '../store/useAppStore';
 import { notificar } from '../store/useToast';
@@ -141,13 +150,19 @@ const navItems = [
   { to: '/seguimiento', label: 'Seguimiento', icon: MapPinned }
 ];
 
-// El dueño revisa indicadores e inventario; la secretaría opera pedidos y despacho
+// Usuario con sesión iniciada en el backend
 const usuario = computed(() => {
-  if (route.path.startsWith('/indicadores') || route.path.startsWith('/inventario')) {
-    return { nombre: 'Erick Operaciones', rol: 'Administrador / dueño', iniciales: 'EO' };
-  }
-  return { nombre: 'Secretaría', rol: 'Ventas y coordinación', iniciales: 'SV' };
+  const u = session.user;
+  const nombre = u?.nombre ?? '';
+  const iniciales = nombre.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
+  return { nombre, rol: u ? ETIQUETA_ROL[u.rol] : '', iniciales };
 });
+
+const router = useRouter();
+async function salir() {
+  await cerrarSesion();
+  await router.replace('/login');
+}
 </script>
 
 <style scoped>
@@ -339,6 +354,30 @@ const usuario = computed(() => {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  flex: 1;
+}
+
+.logout-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--zun-border);
+  border-radius: 50%;
+  background: var(--zun-blanco);
+  color: var(--zun-gris-dark);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.logout-mobile {
+  display: none;
+}
+
+.logout-btn:hover {
+  color: var(--zun-rojo);
+  border-color: var(--zun-rojo);
 }
 
 .profile-name {
@@ -673,6 +712,10 @@ const usuario = computed(() => {
 
   .topbar-title h1 {
     font-size: 1.15rem;
+  }
+
+  .logout-mobile {
+    display: inline-flex;
   }
 
   .topbar-title p,

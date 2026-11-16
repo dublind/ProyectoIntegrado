@@ -3,7 +3,9 @@
     <div class="driver-app">
       <!-- Barra superior de la app -->
       <header class="app-bar">
-        <RouterLink to="/despacho" class="icon-btn" aria-label="Volver al panel"><ArrowLeft :size="20" /></RouterLink>
+        <!-- El administrador vuelve al panel; el chofer solo tiene su app y cierra sesión -->
+        <RouterLink v-if="session.user?.rol === 'administrador'" to="/despacho" class="icon-btn" aria-label="Volver al panel"><ArrowLeft :size="20" /></RouterLink>
+        <button v-else type="button" class="icon-btn" aria-label="Cerrar sesión" title="Cerrar sesión" @click="salir"><LogOut :size="18" /></button>
         <div class="app-bar-title">
           <strong>{{ tituloEtapa }}</strong>
           <label class="van-select">
@@ -273,9 +275,10 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+import { cerrarSesion, session } from '../../store/useSession';
 import {
-  AlertTriangle, ArrowLeft, Check, DoorClosed, Map as MapIcon, MapPin, Navigation, PackageOpen, Phone, Play, ShieldAlert,
+  AlertTriangle, ArrowLeft, Check, LogOut, DoorClosed, Map as MapIcon, MapPin, Navigation, PackageOpen, Phone, Play, ShieldAlert,
   Route, Warehouse, Wifi, WifiOff
 } from 'lucide-vue-next';
 import paisaje from '../../assets/aguamantra-paisaje.jpg';
@@ -285,6 +288,12 @@ import { BODEGA_CENTRAL } from '../../utils/geo';
 import { enlacesRutaGoogleMaps } from '../../utils/rutas';
 import type { TramoGoogleMaps } from '../../utils/rutas';
 import { hoyISO } from '../../utils/formato';
+
+const routerChofer = useRouter();
+async function salir() {
+  await cerrarSesion();
+  await routerChofer.replace('/login');
+}
 import type { Pedido } from '../../types';
 
 // Cada chofer usa la app con su furgón: se elige una vez y el teléfono lo recuerda (o llega por ?furgon=veh-2)

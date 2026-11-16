@@ -208,7 +208,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         console.error('Ya hay una instancia local activa.');
         process.exit(1);
       } catch (e) {
-        if (e.code !== 'ESRCH') throw e;
+        // ESRCH: no existe; EPERM: el PID ya es de otro proceso (no es este servidor)
+        if (e.code !== 'ESRCH' && e.code !== 'EPERM') throw e;
       }
     } catch (e) {
       if (e.code !== 'ENOENT') throw e;

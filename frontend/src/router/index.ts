@@ -1,11 +1,14 @@
-import { createRouter, createWebHistory } from 'vue-router';
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import AdminLayout from '../layouts/AdminLayout.vue';
+import { cargarSesion, inicioPorRol } from '../store/useSession';
+import { puedeEntrar } from './acceso';
 
-const routes = [
+const routes: RouteRecordRaw[] = [
   {
     // Panel web del administrativo y del dueño
     path: '/',
     component: AdminLayout,
+    meta: { roles: ['administrador', 'administrativo'] },
     children: [
       { path: '', redirect: '/indicadores' },
       {
@@ -45,7 +48,14 @@ const routes = [
     path: '/chofer',
     name: 'Chofer',
     component: () => import('../views/chofer/ChoferView.vue'),
-    meta: { title: 'Ruta del chofer' }
+    // El administrador (super usuario) también puede abrir la app del chofer
+    meta: { title: 'Ruta del chofer', roles: ['chofer', 'administrador'] }
+  },
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('../views/LoginView.vue'),
+    meta: { title: 'Iniciar sesión', publica: true }
   },
   {
     // Sistema conectado a la API y a PostgreSQL, con inicio de sesión por perfil
@@ -75,6 +85,15 @@ const router = createRouter({
     }
     return { top: 0 };
   }
+});
+
+// Todo el sistema requiere sesión; cada perfil entra solo a sus módulos
+router.beforeEach(async (to) => {
+  const user = await cargarSesion();
+  if (to.meta.publica) return user && to.name === 'Login' ? inicioPorRol(user) : true;
+  if (!user) return { name: 'Login', query: to.fullPath === '/' ? {} : { redirect: to.fullPath } };
+  if (!puedeEntrar(to, user)) return inicioPorRol(user);
+  return true;
 });
 
 router.afterEach((to) => {
