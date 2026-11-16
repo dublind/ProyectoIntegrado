@@ -1,3 +1,4 @@
+
 name: Pipeline CI/CD - MVP Distribución de Agua
 
 on:
@@ -42,22 +43,19 @@ jobs:
       - name: Configurar Entorno Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
-      # Le indicamos al robot que entre a la carpeta frontend para instalar las librerías
-      - name: Instalar Dependencias (NPM)
+      - name: Instalar Dependencias del Frontend
         working-directory: ./frontend
-        run: npm install
+        run: npm ci
 
-      # Validar la sintaxis dentro de la carpeta correcta
-      - name: Validar Sintaxis Estricta (TypeScript/Vue)
+      - name: Validar TypeScript y Compilar Frontend
         working-directory: ./frontend
-        run: npm run lint || echo "Sintaxis verificada"
+        run: npm run build
 
-      # Ejecutar las pruebas unitarias dentro de la carpeta correcta
-      - name: Ejecutar Suite de Tests Unitarios (QA)
+      - name: Ejecutar Pruebas Unitarias (QA)
         working-directory: ./frontend
-        run: npm run test:unit || echo "Tests unitarios verificados"
+        run: npm run test:unit
 
   deploy-to-staging:
     name: Despliegue Automático a Entorno de Pruebas
@@ -71,8 +69,8 @@ jobs:
 
       - name: Desplegar en Servidor de Pruebas (Staging)
         env:
-          WEBPAY_COMMERCE_CODE: "597020000540"
-          WHATSAPP_MOCK_TOKEN: "EAAGb0023_MOCK_TOKEN_WHATSAPP_META_XYZ"
+            WEBPAY_COMMERCE_CODE: ${{ vars.WEBPAY_COMMERCE_CODE }}
+            WHATSAPP_MOCK_TOKEN: ${{ secrets.WHATSAPP_MOCK_TOKEN }}
         run: |
           echo "Desplegando MVP de Agua Purificada en el entorno de pruebas..."
-          echo "Conectado exitosamente al Sandbox de Webpay y WhatsApp Echo."
+          echo "Simulación de despliegue en staging completada."
