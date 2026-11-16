@@ -47,6 +47,9 @@ const ORDER_COLUMNS = [
   ['pagado', 'Pagado'],
   ['autorizacion', 'Autorización'],
   ['fecha_promesa', 'Fecha promesa'],
+  ['creado_por', 'Creado por'],
+  ['ultimo_responsable', 'Responsable último estado'],
+  ['fecha_ultimo_estado', 'Fecha último estado'],
 ];
 
 const MOVEMENT_COLUMNS = [
@@ -71,11 +74,17 @@ export async function exportOrders(db, { desde, hasta }) {
             p.entregados, p.precio_unitario, p.cantidad * p.precio_unitario AS total,
             COALESCE((SELECT SUM(monto) FROM pago
                       WHERE id_pedido = p.id_pedido AND codigo_estado = 'CONFIRMADO'), 0) AS pagado,
-            p.autorizacion, p.fecha_promesa
+            p.autorizacion, p.fecha_promesa,
+            (SELECT h.responsable FROM historial_estado_pedido h WHERE h.id_pedido = p.id_pedido
+             ORDER BY h.fecha_cambio, h.id_historial LIMIT 1) AS creado_por,
+            u.responsable AS ultimo_responsable, u.fecha_cambio AS fecha_ultimo_estado
      FROM pedido p
      JOIN estado_pedido e ON e.id_estado = p.id_estado_actual
      JOIN cliente c ON c.id_cliente = p.id_cliente
      JOIN direccion d ON d.id_direccion = p.id_direccion_entrega
+     LEFT JOIN LATERAL (SELECT responsable, fecha_cambio FROM historial_estado_pedido h
+                        WHERE h.id_pedido = p.id_pedido
+                        ORDER BY h.fecha_cambio DESC, h.id_historial DESC LIMIT 1) u ON TRUE
      WHERE ($1::date IS NULL OR p.fecha_creacion >= $1::date)
        AND ($2::date IS NULL OR p.fecha_creacion < $2::date + 1)
      ORDER BY p.id_pedido`,

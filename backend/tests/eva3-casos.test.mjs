@@ -500,6 +500,11 @@ test('CP-16: exportar pedidos y movimientos (PBI 75, ER-04)', async () => {
   assert.equal(row[3], `'=HYPERLINK("x")`);
   assert.equal(row[5], 'Calle; con "comillas" 10');
   assert.equal(row[6], 'Ñuñoa');
+  // Responsables (criterio del PBI 75): quién creó el pedido y quién hizo el último cambio
+  const head = cells(lines[0]);
+  assert.equal(row[head.indexOf('Creado por')], 'administrativo');
+  assert.equal(row[head.indexOf('Responsable último estado')], 'administrativo');
+  assert.ok(row[head.indexOf('Fecha último estado')]);
 
   // Filtro por fecha: un rango futuro no trae pedidos; un rango inválido se rechaza
   const empty = await download('/export/orders?desde=2999-01-01', 'administrativo');
