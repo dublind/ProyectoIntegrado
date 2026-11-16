@@ -1,5 +1,5 @@
 import { ApiError, fail, permit } from '../shared/errors.mjs';
-import { text } from '../shared/validation.mjs';
+import { text, eventKey } from '../shared/validation.mjs';
 import { one, rows } from '../shared/database.mjs';
 import { audit } from '../shared/audit.mjs';
 import { getBalance, move } from './inventory.mjs';
@@ -53,10 +53,14 @@ export async function handleReturns(db, user, method, id, action, body) {
     return { ok: true };
   }
 
-  const pendingReturn = await one(db, 'SELECT * FROM retorno_pendiente WHERE id=$1', [id]);
+  const pendingReturn = await one(
+    db,
+    'SELECT * FROM retorno_pendiente WHERE id=$1 FOR UPDATE',
+    [id],
+  );
 
   if (action === 'collect') {
-    return collectReturn(db, user, id, pendingReturn);
+    return collectReturn(db, user, id, body, pendingReturn);
   }
 
   if (action === 'writeoff') {
@@ -65,11 +69,51 @@ export async function handleReturns(db, user, method, id, action, body) {
   throw new ApiError(404, 'Ruta no encontrada');
 }
 
-async function collectReturn(db, user, id, pendingReturn) {
+async function collectReturn(db, user, id, body, pendingReturn) {
   permit(user, 'chofer');
+  const key = body?.evento
+    ? eventKey(body)
+    : 'retiro-' + id;
+
+  const movimientosAnteriores = await rows(
+    db,
+    'SELECT codigo_tipo_movimiento, observacion FROM movimiento_inventario WHERE evento=$1',
+    [key],
+  );
+
+  if (movimientosAnteriores.length > 0) {
+    const anterior = movimientosAnteriores[0];
+
+    fail(
+      anterior.codigo_tipo_movimiento !== 'DEVOLUCION' ||
+        anterior.observacion !== 'Retirado: incidencia ' + id,
+      'Identificador de evento ya utilizado',
+      409,
+    );
+
+    return { ok: true };
+  }
+
   if (pendingReturn.estado === 'retirado' && pendingReturn.retirado_por === user.username) {
     return { ok: true };
   }
+
+  const cantidadRetirada = body?.cantidad ?? pendingReturn.cantidad;
+
+  fail(
+    !Number.isInteger(cantidadRetirada) ||
+      cantidadRetirada <= 0 ||
+      cantidadRetirada > pendingReturn.cantidad,
+    'Cantidad de devolución inválida',
+    400,
+  );
+
+  fail(
+    cantidadRetirada < pendingReturn.cantidad && !body?.evento,
+    'El retiro parcial requiere un identificador de evento',
+    400,
+  );
+
   fail(!['pendiente', 'no_retornaron'].includes(pendingReturn.estado), 'Retorno ya resuelto', 409);
   const turn = await one(db, "SELECT * FROM turno WHERE estado='en_ruta' AND chofer=$1", [
     user.username,
@@ -89,28 +133,44 @@ async function collectReturn(db, user, id, pendingReturn) {
   fail(
     (await getBalance(db, 'TRANSITO', 'LLENO')) +
       (await getBalance(db, 'TRANSITO', 'VACIO')) +
-      pendingReturn.cantidad >
+      cantidadRetirada >
       vehicle.capacidad,
     'Retiro excede la capacidad del vehículo; coordina con administración',
     409,
   );
   await move(db, user, {
     tipo: 'DEVOLUCION',
-    cantidad: pendingReturn.cantidad,
+    cantidad: cantidadRetirada,
     origen: 'RETORNOS',
     condicionOrigen: 'VACIO',
     destino: 'TRANSITO',
     condicionDestino: 'VACIO',
     pedido: pendingReturn.pedido_id,
     observacion: 'Retirado: incidencia ' + id,
-    evento: 'retiro-' + id,
+    evento: key,
   });
-  await db.query(
-    "UPDATE retorno_pendiente SET estado='retirado',fecha_resolucion=now(),retirado_por=$2 WHERE id=$1",
-    [id, user.username],
-  );
-  await audit(db, user, 'Resolver retiro pendiente', id);
-  await resolvePendingReturnAlert(db, id);
+  const cantidadPendiente = pendingReturn.cantidad - cantidadRetirada;
+
+  if (cantidadPendiente > 0) {
+    await db.query(
+      'UPDATE retorno_pendiente SET cantidad=$2 WHERE id=$1',
+      [id, cantidadPendiente],
+    );
+
+    await audit(db, user, 'Retiro parcial de botellones', id, {
+      retirados: cantidadRetirada,
+      pendientes: cantidadPendiente,
+    });
+  } else {
+    await db.query(
+      "UPDATE retorno_pendiente SET estado='retirado',fecha_resolucion=now(),retirado_por=$2 WHERE id=$1",
+      [id, user.username],
+    );
+
+    await audit(db, user, 'Resolver retiro pendiente', id);
+    await resolvePendingReturnAlert(db, id);
+  }
+
   return { ok: true };
 }
 
