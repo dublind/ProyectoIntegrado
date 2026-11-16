@@ -731,12 +731,14 @@ test('CP-24: con 500 pedidos el panel responde en menos de 2 s', async () => {
   assert.ok(ms < 2000, `El panel tardó ${Math.round(ms)} ms`);
 });
 
-// PBI 69 (tarea 116): cuadratura de inventario de punta a punta
-test('PBI 69: la cuadratura se mantiene en un ciclo completo y v_inconsistencias detecta descuadres', async () => {
-  // Total físico: todo lo que está en ubicaciones internas (bodega, rotos, furgón)
+// PBI 69 (tarea 116): los 6 criterios confirmados por el cliente, en un solo recorrido
+test('PBI 69: cuadratura de punta a punta con los 6 criterios del cliente', async () => {
+  // Total físico: lo que está en ubicaciones internas (bodega, rotos, furgón)
   const physical = async () =>
     Number(await value('SELECT COALESCE(SUM(saldo),0)::INT n FROM v_inventario_clasificado'));
-  // Lo mismo reconstruido solo desde el libro: entradas y salidas del sistema
+  // Disponibles: llenos en bodega listos para cargar
+  const available = () => stock('BODEGA', 'LLENO');
+  // El total físico reconstruido solo desde el libro (entradas menos salidas del sistema)
   const ledger = async () =>
     Number(
       await value(`SELECT COALESCE(SUM(CASE
@@ -747,43 +749,40 @@ test('PBI 69: la cuadratura se mantiene en un ciclo completo y v_inconsistencias
         JOIN ubicacion co ON co.id_ubicacion = m.id_ubicacion_origen
         JOIN ubicacion cd ON cd.id_ubicacion = m.id_ubicacion_destino`),
     );
-  const problems = async () => (await call('/state', 'GET', undefined, 'ignacio')).inconsistencias;
+  const paid = async (id) =>
+    Number(
+      await value(
+        "SELECT COALESCE(SUM(monto),0)::INT n FROM pago WHERE id_pedido=$1 AND codigo_estado='CONFIRMADO'",
+        [id],
+      ),
+    );
   const check = async (step) => {
-    assert.equal(await physical(), await ledger(), `Total físico = libro (${step})`);
-    assert.deepEqual(await problems(), [], `Sin inconsistencias (${step})`);
+    assert.equal(await physical(), await ledger(), `Ecuación de stock (${step})`);
+    const { inconsistencias } = await call('/state', 'GET', undefined, 'ignacio');
+    assert.deepEqual(inconsistencias, [], `Sin inconsistencias (${step})`);
   };
 
   await planningTurn();
-  await check('inicio');
-
-  // Criterio 1: el ingreso suma al total físico y a los disponibles
-  const before = await physical();
   await call(
     '/inventory/0/initial',
     'POST',
-    { cantidad: 10, motivo: 'Compra', evento: randomUUID() },
+    { cantidad: 20, motivo: 'Compra', evento: randomUUID() },
     'ignacio',
   );
-  assert.equal(await physical(), before + 10);
-  await check('ingreso');
+  await check('inicio');
 
-  // Criterio 2: la salida a ruta mueve llenos de bodega a tránsito sin cambiar el total
-  const { p } = await newOrder(4);
+  // Entrega parcial: 3 de 4 entregados, 1 roto en el trayecto, 1 vacío retirado → 2 pendientes
+  const { c, d, p } = await newOrder(4);
   await pay(p);
-  const total = await physical();
+  const paidBefore = await paid(p.id_pedido);
   await startRoute();
-  assert.equal(await physical(), total);
-  assert.ok((await stock('TRANSITO', 'LLENO')) >= 4);
-  await check('salida a ruta');
-
-  // Criterio 3: la entrega saca llenos del total; los vacíos retirados vuelven a contar
   const stop = await stopFor(p.id_pedido);
   await call(
     `/stops/${stop.id}/deliver`,
     'POST',
     {
       entregados: 3,
-      vacios: 2,
+      vacios: 1,
       rotos: 1,
       aceptacion_parcial: true,
       detalle: 'Fisura',
@@ -791,42 +790,147 @@ test('PBI 69: la cuadratura se mantiene en un ciclo completo y v_inconsistencias
     },
     'chofer',
   );
-  assert.equal(await physical(), total - 3 + 2);
-  await check('entrega parcial con rotura');
+  await check('entrega parcial');
+  const pending = (
+    await db.query('SELECT * FROM retorno_pendiente WHERE pedido_id=$1', [p.id_pedido])
+  ).rows[0];
+  assert.equal(pending.cantidad, 2);
 
-  // Criterio 4: el roto informado sigue en el total físico al clasificarlo, fuera de disponibles
+  // Criterio 1a: el traslado a rotos no reduce el total físico ni suma disponibles
+  let total = await physical();
+  let free = await available();
   const report = (await call('/state')).reportes.find(
     (r) => r.pedido_id === p.id_pedido && !r.clasificado,
   );
-  const roto = await stock('ROTOS', 'ROTO');
   await call(`/inventory/${report.id}/classify`, 'POST', {});
-  assert.equal(await stock('ROTOS', 'ROTO'), roto + 1);
-  assert.equal(await physical(), total - 3 + 2);
-  await check('clasificación de roto');
+  assert.equal(await physical(), total, 'Rotos siguen en el total físico');
+  assert.equal(await available(), free, 'Rotos no son disponibles');
+  await check('traslado a rotos');
 
-  // Criterio 5: el cierre del turno descarga el furgón completo en bodega
+  // Criterio 3: repetir el mismo retiro no duplica movimientos (retiro parcial de 1 de los 2)
+  const pickup = { cantidad: 1, evento: randomUUID() };
+  total = await physical();
+  await call(`/returns/${pending.id}/collect`, 'POST', pickup, 'chofer');
+  await call(`/returns/${pending.id}/collect`, 'POST', pickup, 'chofer');
+  assert.equal(
+    Number(
+      await value('SELECT COUNT(*)::INT n FROM movimiento_inventario WHERE evento=$1', [
+        pickup.evento,
+      ]),
+    ),
+    1,
+  );
+  assert.equal(await physical(), total + 1, 'El vacío retirado cuenta una sola vez');
+  await check('retiro repetido');
+
+  // Cierre del turno: el furgón descarga todo en bodega
   await finishRoute();
   assert.equal(await stock('TRANSITO', 'LLENO'), 0);
   assert.equal(await stock('TRANSITO', 'VACIO'), 0);
   await check('cierre de turno');
 
-  // Criterio 6: solo la baja del administrador saca rotos del total físico
-  const beforeWriteoff = await physical();
+  // Criterio 1b: solo la baja autorizada del administrador reduce el total físico
+  total = await physical();
+  const writeoff = {
+    cantidad: 1,
+    origen: 'ROTOS',
+    motivo: 'Inservible',
+    revisado: true,
+    eliminado: true,
+    evento: randomUUID(),
+  };
+  await call('/inventory/0/writeoff', 'POST', writeoff, 'administrativo', 403);
+  await call('/inventory/0/writeoff', 'POST', writeoff, 'ignacio');
+  assert.equal(await physical(), total - 1);
+  await check('baja de roto');
+
+  // Criterios 2 y 6: pendiente → no retornado (30 días) → baja del administrador (60 días):
+  // no cambia disponibles ni total, conserva la fecha original y registra quién dio la baja
+  const at30 = (
+    await db.query(
+      "UPDATE retorno_pendiente SET fecha=now()-interval '31 days' WHERE id=$1 RETURNING fecha",
+      [pending.id],
+    )
+  ).rows[0].fecha;
+  total = await physical();
+  free = await available();
+  const row = (await call('/state')).retornos.find((r) => r.id === pending.id);
+  assert.equal(row.estado, 'no_retornaron');
+  assert.equal(new Date(row.fecha).getTime(), new Date(at30).getTime(), 'Fecha original (30)');
+  assert.equal(await available(), free, 'Un no retornado no suma disponibles');
+  assert.equal(await physical(), total, 'Un no retornado no suma al total físico');
+  await call(`/returns/${pending.id}/writeoff`, 'POST', { evidencia: 'x' }, 'ignacio', 409);
+  const at60 = (
+    await db.query(
+      "UPDATE retorno_pendiente SET fecha=now()-interval '61 days' WHERE id=$1 RETURNING fecha",
+      [pending.id],
+    )
+  ).rows[0].fecha;
+  await call(`/returns/${pending.id}/writeoff`, 'POST', { evidencia: 'x' }, 'administrativo', 403);
   await call(
-    '/inventory/0/writeoff',
+    `/returns/${pending.id}/writeoff`,
     'POST',
-    {
-      cantidad: 1,
-      origen: 'ROTOS',
-      motivo: 'Inservible',
-      revisado: true,
-      eliminado: true,
-      evento: randomUUID(),
-    },
+    { evidencia: 'Coordinación agotada' },
     'ignacio',
   );
-  assert.equal(await physical(), beforeWriteoff - 1);
-  await check('baja de roto');
+  const closed = (await db.query('SELECT * FROM retorno_pendiente WHERE id=$1', [pending.id]))
+    .rows[0];
+  assert.equal(closed.estado, 'baja');
+  assert.equal(new Date(closed.fecha).getTime(), new Date(at60).getTime(), 'Fecha original (60)');
+  assert.equal(
+    await value(
+      "SELECT actor n FROM auditoria WHERE accion='Baja de no retornados' AND entidad=$1",
+      [String(pending.id)],
+    ),
+    'ignacio',
+    'Responsable de la baja',
+  );
+  assert.equal(await available(), free);
+  assert.equal(await physical(), total);
+  await check('baja de no retornado');
+
+  // Criterio 4: autorización sin retorno no suma stock
+  await planningTurn();
+  const next = await call('/orders', 'POST', {
+    id_cliente: c.id_cliente,
+    id_direccion: d.id_direccion,
+    cantidad: 1,
+  });
+  assert.equal(next.autorizacion, 'PENDIENTE', 'Cliente con no retornados requiere autorización');
+  await pay(next);
+  total = await physical();
+  free = await available();
+  await call(`/orders/${next.id_pedido}/authorize`, 'POST', {
+    decision: 'SIN_RETORNO',
+    motivo: 'Cliente perdió envases',
+  });
+  assert.equal(await physical(), total);
+  assert.equal(await available(), free);
+  await check('autorización sin retorno');
+
+  // Criterio 5: el saldo de la parcial mantiene la cantidad pedida y el pago original
+  await call(`/orders/${p.id_pedido}/enqueue`, 'POST', {});
+  await startRoute();
+  const rest = await stopFor(p.id_pedido);
+  assert.equal(rest.cantidad, 1, 'Solo el faltante va al siguiente turno');
+  await call(
+    `/stops/${rest.id}/deliver`,
+    'POST',
+    { entregados: 1, vacios: 1, evento: randomUUID() },
+    'chofer',
+  );
+  const order = (
+    await db.query('SELECT cantidad, entregados FROM pedido WHERE id_pedido=$1', [p.id_pedido])
+  ).rows[0];
+  assert.deepEqual({ ...order }, { cantidad: 4, entregados: 4 });
+  assert.equal(
+    Number(await value('SELECT COUNT(*)::INT n FROM pago WHERE id_pedido=$1', [p.id_pedido])),
+    1,
+    'Sin nuevo cobro',
+  );
+  assert.equal(await paid(p.id_pedido), paidBefore);
+  await finishRoute();
+  await check('saldo de parcial entregado');
 });
 
 test('PBI 69: v_inconsistencias reporta rutas, condiciones y entregas que no cuadran', async () => {
