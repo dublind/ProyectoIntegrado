@@ -122,7 +122,7 @@ async function initialize(db, { memory, password, url }) {
     });
   }
   // Cambios posteriores al Sprint 1: idempotentes, se aplican también sobre bases ya creadas
-  for (const file of ['sprint2-avisos.sql']) {
+  for (const file of ['sprint2-avisos.sql', 'sprint3-cuadratura.sql']) {
     await db.exec(await readFile(root + '/database/' + file, 'utf8'));
   }
 }

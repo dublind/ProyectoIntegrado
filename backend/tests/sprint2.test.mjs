@@ -267,9 +267,9 @@ test('PBI 67/76: retiro pendiente alerta una vez con fecha, pasa a no retornados
   // El turno 1 se cerró en la prueba de despacho; este turno toma los pedidos pagados pendientes.
   // La fecha va después de todos los turnos existentes: una fecha fija chocaba con UNIQUE(fecha, nombre)
   // el día en que coincidía con el turno sembrado con CURRENT_DATE.
-  const { rows: [{ fecha }] } = await db.query(
-    'SELECT (GREATEST(MAX(fecha), CURRENT_DATE) + 1)::TEXT AS fecha FROM turno',
-  );
+  const {
+    rows: [{ fecha }],
+  } = await db.query('SELECT (GREATEST(MAX(fecha), CURRENT_DATE) + 1)::TEXT AS fecha FROM turno');
   const turn = await call('/turns', 'POST', {
     fecha,
     nombre: 'Mañana',
@@ -332,18 +332,13 @@ test('PBI 67/76: retiro pendiente alerta una vez con fecha, pasa a no retornados
   assert.equal(retornoParcial.estado, 'no_retornaron');
 
   // La alerta debe permanecer activa.
-  assert.ok(
-    state.avisos.some(
-      (a) => a.tipo === 'RETIRO_PENDIENTE' && a.pedido_id === p.id_pedido,
-    ),
-  );
+  assert.ok(state.avisos.some((a) => a.tipo === 'RETIRO_PENDIENTE' && a.pedido_id === p.id_pedido));
 
   // El movimiento físico debe registrarse una sola vez.
   assert.equal(
-    await count(
-      'SELECT COUNT(*)::INT n FROM movimiento_inventario WHERE evento=$1',
-      [eventoParcial],
-    ),
+    await count('SELECT COUNT(*)::INT n FROM movimiento_inventario WHERE evento=$1', [
+      eventoParcial,
+    ]),
     1,
   );
 

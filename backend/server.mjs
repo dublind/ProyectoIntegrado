@@ -172,6 +172,14 @@ export function createServer(db, options = {}) {
           options,
         ),
       );
+      // Exportaciones (PBI 75): descarga de archivo CSV en vez de JSON
+      if (result?.file) {
+        res.writeHead(200, {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${result.file.name}"`,
+        });
+        return res.end(result.file.body);
+      }
       return send(200, result);
     } catch (error) {
       if (error instanceof ApiError) return send(error.status, { error: error.message });

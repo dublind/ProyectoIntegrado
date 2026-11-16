@@ -53,11 +53,9 @@ export async function handleReturns(db, user, method, id, action, body) {
     return { ok: true };
   }
 
-  const pendingReturn = await one(
-    db,
-    'SELECT * FROM retorno_pendiente WHERE id=$1 FOR UPDATE',
-    [id],
-  );
+  const pendingReturn = await one(db, 'SELECT * FROM retorno_pendiente WHERE id=$1 FOR UPDATE', [
+    id,
+  ]);
 
   if (action === 'collect') {
     return collectReturn(db, user, id, body, pendingReturn);
@@ -71,9 +69,7 @@ export async function handleReturns(db, user, method, id, action, body) {
 
 async function collectReturn(db, user, id, body, pendingReturn) {
   permit(user, 'chofer');
-  const key = body?.evento
-    ? eventKey(body)
-    : 'retiro-' + id;
+  const key = body?.evento ? eventKey(body) : 'retiro-' + id;
 
   const movimientosAnteriores = await rows(
     db,
@@ -152,10 +148,7 @@ async function collectReturn(db, user, id, body, pendingReturn) {
   const cantidadPendiente = pendingReturn.cantidad - cantidadRetirada;
 
   if (cantidadPendiente > 0) {
-    await db.query(
-      'UPDATE retorno_pendiente SET cantidad=$2 WHERE id=$1',
-      [id, cantidadPendiente],
-    );
+    await db.query('UPDATE retorno_pendiente SET cantidad=$2 WHERE id=$1', [id, cantidadPendiente]);
 
     await audit(db, user, 'Retiro parcial de botellones', id, {
       retirados: cantidadRetirada,

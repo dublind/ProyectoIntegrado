@@ -114,7 +114,9 @@ async function planningTurn() {
   if (!turno) {
     // Un turno por fecha y nombre: cada turno de prueba usa el día siguiente al último existente.
     // Fechas fijas chocaban con el turno sembrado con CURRENT_DATE según el día en que corre el CI.
-    const fecha = await value('SELECT (GREATEST(MAX(fecha), CURRENT_DATE) + 1)::TEXT AS n FROM turno');
+    const fecha = await value(
+      'SELECT (GREATEST(MAX(fecha), CURRENT_DATE) + 1)::TEXT AS n FROM turno',
+    );
     turno = await call('/turns', 'POST', {
       fecha,
       nombre: 'Mañana',
@@ -458,7 +460,92 @@ test('CP-15: escalamiento a 30 y 60 días con baja exclusiva del administrador',
   assert.match(ficha.nota_no_retornados, /No retornados/);
 });
 
-test.todo('CP-16: exportar pedidos y movimientos (no implementado, ER-04, PBI 75)');
+async function download(path, username, expected = 200) {
+  const res = await fetch(base + path, { headers: { Cookie: cookies[username] ?? '' } });
+  assert.equal(res.status, expected);
+  // ignoreBOM: conservar el BOM para verificar que el archivo lo trae
+  return {
+    res,
+    text: new TextDecoder('utf-8', { ignoreBOM: true }).decode(await res.arrayBuffer()),
+  };
+}
+// Separa una fila CSV con ';' respetando comillas
+const cells = (line) =>
+  [...line.matchAll(/("(?:[^"]|"")*"|[^;]*)(;|$)/g)]
+    .slice(0, -1)
+    .map((m) => m[1].replace(/^"|"$/g, '').replaceAll('""', '"'));
+
+test('CP-16: exportar pedidos y movimientos (PBI 75, ER-04)', async () => {
+  // Un nombre con fórmula no debe ejecutarse al abrir el CSV en Excel
+  const c = await call('/clients', 'POST', { nombre: '=HYPERLINK("x")', telefono: phone() });
+  const d = await call('/addresses', 'POST', {
+    id_cliente: c.id_cliente,
+    calle: 'Calle; con "comillas"',
+    numero: '10',
+    comuna: 'Ñuñoa',
+  });
+  const p = await call('/orders', 'POST', {
+    id_cliente: c.id_cliente,
+    id_direccion: d.id_direccion,
+    cantidad: 1,
+  });
+
+  const { res, text } = await download('/export/orders', 'administrativo');
+  assert.match(res.headers.get('content-type'), /text\/csv/);
+  assert.match(res.headers.get('content-disposition'), /attachment; filename="pedidos-.*\.csv"/);
+  assert.equal(text.charCodeAt(0), 0xfeff, 'BOM UTF-8 para Excel');
+  const lines = text.slice(1).trim().split('\r\n');
+  assert.equal(cells(lines[0])[0], 'Pedido');
+  const row = cells(lines.find((l) => l.startsWith(String(p.id_pedido) + ';')));
+  assert.equal(row[3], `'=HYPERLINK("x")`);
+  assert.equal(row[5], 'Calle; con "comillas" 10');
+  assert.equal(row[6], 'Ñuñoa');
+
+  // Filtro por fecha: un rango futuro no trae pedidos; un rango inválido se rechaza
+  const empty = await download('/export/orders?desde=2999-01-01', 'administrativo');
+  assert.equal(empty.text.slice(1).trim().split('\r\n').length, 1);
+  await download('/export/orders?desde=ayer', 'administrativo', 400);
+  await download('/export/orders?desde=2026-02-01&hasta=2026-01-01', 'administrativo', 400);
+
+  // Permisos: el chofer no exporta; los movimientos son solo del administrador
+  await download('/export/orders', 'chofer', 403);
+  await download('/export/movements', 'administrativo', 403);
+
+  // La suma de los movimientos exportados cuadra con v_saldo_inventario
+  const mov = await download('/export/movements', 'ignacio');
+  const [header, ...data] = mov.text.slice(1).trim().split('\r\n').map(cells);
+  const col = (name) => header.indexOf(name);
+  const balance = {};
+  for (const r of data) {
+    const n = Number(r[col('Cantidad')]);
+    const from = r[col('Origen')] + '/' + r[col('Condición origen')];
+    const to = r[col('Destino')] + '/' + r[col('Condición destino')];
+    balance[from] = (balance[from] ?? 0) - n;
+    balance[to] = (balance[to] ?? 0) + n;
+  }
+  for (const [key, n] of Object.entries(balance)) {
+    const [location, condition] = key.split('/');
+    if ((await value('SELECT tipo n FROM ubicacion WHERE codigo=$1', [location])) === 'EXTERNA')
+      continue;
+    assert.equal(n, await stock(location, condition), `Saldo exportado de ${key}`);
+  }
+
+  // Filtro por tipo y ubicación
+  const filtered = await download('/export/movements?tipo=ingreso&ubicacion=bodega', 'ignacio');
+  for (const r of filtered.text.slice(1).trim().split('\r\n').slice(1).map(cells)) {
+    assert.equal(r[col('Tipo')], 'INGRESO');
+    assert.ok(r[col('Origen')] === 'BODEGA' || r[col('Destino')] === 'BODEGA');
+  }
+
+  // Cada exportación queda auditada
+  assert.ok(
+    Number(
+      await value(
+        "SELECT COUNT(*)::INT n FROM auditoria WHERE accion IN ('Exportar pedidos','Exportar movimientos')",
+      ),
+    ) >= 3,
+  );
+});
 
 test('CP-17 (API): permisos por perfil', async () => {
   const driver = await call('/state', 'GET', undefined, 'chofer');
@@ -496,12 +583,22 @@ test('CP-18: inyección SQL y XSS se guardan como texto', async () => {
   assert.equal((await call(`/clients/${sql.id_cliente}`)).nombre, "' OR 1=1 --");
   assert.equal((await call(`/clients/${xss.id_cliente}`)).nombre, '<script>alert(1)</script>');
   // La interfaz no inserta HTML sin escapar (las vistas están organizadas en subcarpetas)
-  const vistas = async dir => (await Promise.all((await readdir(dir, { withFileTypes: true })).map(e =>
-    e.isDirectory() ? vistas(path.join(dir, e.name)) : e.name.endsWith('.vue') ? [path.join(dir, e.name)] : []))).flat();
+  const vistas = async (dir) =>
+    (
+      await Promise.all(
+        (await readdir(dir, { withFileTypes: true })).map((e) =>
+          e.isDirectory()
+            ? vistas(path.join(dir, e.name))
+            : e.name.endsWith('.vue')
+              ? [path.join(dir, e.name)]
+              : [],
+        ),
+      )
+    ).flat();
   const archivos = [
-    ...await vistas(path.join(root, 'frontend/src/views')),
-    ...await vistas(path.join(root, 'frontend/src/components')),
-    ...await vistas(path.join(root, 'frontend/src/layouts'))
+    ...(await vistas(path.join(root, 'frontend/src/views'))),
+    ...(await vistas(path.join(root, 'frontend/src/components'))),
+    ...(await vistas(path.join(root, 'frontend/src/layouts'))),
   ];
   assert.ok(archivos.length > 0);
   for (const file of archivos) {
@@ -632,4 +729,134 @@ test('CP-24: con 500 pedidos el panel responde en menos de 2 s', async () => {
   const ms = performance.now() - start;
   assert.ok(state.pedidos.length >= 500);
   assert.ok(ms < 2000, `El panel tardó ${Math.round(ms)} ms`);
+});
+
+// PBI 69 (tarea 116): cuadratura de inventario de punta a punta
+test('PBI 69: la cuadratura se mantiene en un ciclo completo y v_inconsistencias detecta descuadres', async () => {
+  // Total físico: todo lo que está en ubicaciones internas (bodega, rotos, furgón)
+  const physical = async () =>
+    Number(await value('SELECT COALESCE(SUM(saldo),0)::INT n FROM v_inventario_clasificado'));
+  // Lo mismo reconstruido solo desde el libro: entradas y salidas del sistema
+  const ledger = async () =>
+    Number(
+      await value(`SELECT COALESCE(SUM(CASE
+          WHEN co.tipo = 'EXTERNA' AND cd.tipo <> 'EXTERNA' THEN m.cantidad
+          WHEN co.tipo <> 'EXTERNA' AND cd.tipo = 'EXTERNA' THEN -m.cantidad
+          ELSE 0 END),0)::INT n
+        FROM movimiento_inventario m
+        JOIN ubicacion co ON co.id_ubicacion = m.id_ubicacion_origen
+        JOIN ubicacion cd ON cd.id_ubicacion = m.id_ubicacion_destino`),
+    );
+  const problems = async () => (await call('/state', 'GET', undefined, 'ignacio')).inconsistencias;
+  const check = async (step) => {
+    assert.equal(await physical(), await ledger(), `Total físico = libro (${step})`);
+    assert.deepEqual(await problems(), [], `Sin inconsistencias (${step})`);
+  };
+
+  await planningTurn();
+  await check('inicio');
+
+  // Criterio 1: el ingreso suma al total físico y a los disponibles
+  const before = await physical();
+  await call(
+    '/inventory/0/initial',
+    'POST',
+    { cantidad: 10, motivo: 'Compra', evento: randomUUID() },
+    'ignacio',
+  );
+  assert.equal(await physical(), before + 10);
+  await check('ingreso');
+
+  // Criterio 2: la salida a ruta mueve llenos de bodega a tránsito sin cambiar el total
+  const { p } = await newOrder(4);
+  await pay(p);
+  const total = await physical();
+  await startRoute();
+  assert.equal(await physical(), total);
+  assert.ok((await stock('TRANSITO', 'LLENO')) >= 4);
+  await check('salida a ruta');
+
+  // Criterio 3: la entrega saca llenos del total; los vacíos retirados vuelven a contar
+  const stop = await stopFor(p.id_pedido);
+  await call(
+    `/stops/${stop.id}/deliver`,
+    'POST',
+    {
+      entregados: 3,
+      vacios: 2,
+      rotos: 1,
+      aceptacion_parcial: true,
+      detalle: 'Fisura',
+      evento: randomUUID(),
+    },
+    'chofer',
+  );
+  assert.equal(await physical(), total - 3 + 2);
+  await check('entrega parcial con rotura');
+
+  // Criterio 4: el roto informado sigue en el total físico al clasificarlo, fuera de disponibles
+  const report = (await call('/state')).reportes.find(
+    (r) => r.pedido_id === p.id_pedido && !r.clasificado,
+  );
+  const roto = await stock('ROTOS', 'ROTO');
+  await call(`/inventory/${report.id}/classify`, 'POST', {});
+  assert.equal(await stock('ROTOS', 'ROTO'), roto + 1);
+  assert.equal(await physical(), total - 3 + 2);
+  await check('clasificación de roto');
+
+  // Criterio 5: el cierre del turno descarga el furgón completo en bodega
+  await finishRoute();
+  assert.equal(await stock('TRANSITO', 'LLENO'), 0);
+  assert.equal(await stock('TRANSITO', 'VACIO'), 0);
+  await check('cierre de turno');
+
+  // Criterio 6: solo la baja del administrador saca rotos del total físico
+  const beforeWriteoff = await physical();
+  await call(
+    '/inventory/0/writeoff',
+    'POST',
+    {
+      cantidad: 1,
+      origen: 'ROTOS',
+      motivo: 'Inservible',
+      revisado: true,
+      eliminado: true,
+      evento: randomUUID(),
+    },
+    'ignacio',
+  );
+  assert.equal(await physical(), beforeWriteoff - 1);
+  await check('baja de roto');
+});
+
+test('PBI 69: v_inconsistencias reporta rutas, condiciones y entregas que no cuadran', async () => {
+  // Base aparte: el libro es inmutable y no se pueden borrar los descuadres sembrados
+  const local = await openDatabase({ memory: true, password: 'Prueba-local-2026' });
+  try {
+    const insert = (tipo, cantidad, origen, co, destino, cd, pedido = null) =>
+      local.query(
+        `INSERT INTO movimiento_inventario(codigo_tipo_movimiento,id_producto,cantidad,id_ubicacion_origen,condicion_origen,id_ubicacion_destino,condicion_destino,id_pedido,responsable,observacion,evento)
+         VALUES ($1,(SELECT id_producto FROM producto WHERE codigo='BIDON'),$2,(SELECT id_ubicacion FROM ubicacion WHERE codigo=$3),$4,(SELECT id_ubicacion FROM ubicacion WHERE codigo=$5),$6,$7,'prueba','descuadre sembrado',$8)`,
+        [tipo, cantidad, origen, co, destino, cd, pedido, randomUUID()],
+      );
+    await insert('ENTREGA', 1, 'BODEGA', 'LLENO', 'ENTREGADOS', 'LLENO'); // ruta y sin pedido
+    await insert('ROTURA', 1, 'TRANSITO', 'LLENO', 'ROTOS', 'VACIO'); // condición
+    await insert('DESPACHO', 2, 'BODEGA', 'LLENO', 'TRANSITO', 'LLENO'); // tránsito sin turno en ruta
+    await insert('ENTREGA', 50, 'TRANSITO', 'LLENO', 'ENTREGADOS', 'LLENO', 2); // más de lo pedido
+    const found = (await local.query('SELECT problema FROM v_inconsistencias')).rows.map(
+      (r) => r.problema,
+    );
+    for (const problem of [
+      'RUTA_NO_ESPERADA',
+      'ENTREGA_SIN_PEDIDO',
+      'CONDICION_NO_ESPERADA',
+      'ENTREGADO_MAS_DE_LO_PEDIDO',
+      'ENTREGAS_NO_CUADRAN',
+      'SALDO_NEGATIVO',
+    ]) {
+      assert.ok(found.includes(problem), `Detecta ${problem}: ${found.join(', ')}`);
+    }
+  } finally {
+    await local.close();
+  }
 });
