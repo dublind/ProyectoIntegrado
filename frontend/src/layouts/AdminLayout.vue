@@ -44,6 +44,12 @@
           <h1>{{ route.meta.title }}</h1>
           <p>{{ route.meta.descripcion }}</p>
         </div>
+        <button type="button" class="avisos-btn" @click="mostrarAvisos = true"
+          :aria-label="`Avisos internos, ${avisosNoLeidos} sin leer`">
+          <Bell :size="16" />
+          <span class="avisos-label">Avisos</span>
+          <span v-if="avisosNoLeidos > 0" class="avisos-count">{{ avisosNoLeidos }}</span>
+        </button>
         <span class="live-pill" title="Se actualiza al instante con lo que registra el chofer">
           <span class="live-dot"></span> En vivo
         </span>
@@ -60,6 +66,34 @@
         </RouterLink>
       </header>
 
+      <!-- Avisos internos de rotura (PBI 68) -->
+      <div v-if="mostrarAvisos" class="modal-overlay" @click.self="mostrarAvisos = false">
+        <section class="modal-content avisos-modal" role="dialog" aria-modal="true" aria-labelledby="avisos-title">
+          <div class="modal-header">
+            <h2 id="avisos-title">Avisos internos</h2>
+            <button type="button" class="btn-close" aria-label="Cerrar" @click="mostrarAvisos = false">&times;</button>
+          </div>
+          <p class="avisos-nota">Avisos guardados en este navegador; no se envían por correo ni WhatsApp.</p>
+          <div v-if="appStore.state.notificacionesInternas.length" class="avisos-lista">
+            <article v-for="n in appStore.state.notificacionesInternas" :key="n.id"
+              :class="['aviso', { leido: n.leida }]">
+              <div class="aviso-head">
+                <span :class="['badge', n.destinatario === 'administrador' ? 'badge-primary' : 'badge-warning']">
+                  Para {{ n.destinatario === 'administrador' ? 'administración' : `cliente: ${n.clienteNombre}` }}
+                </span>
+                <span class="text-xs text-muted">{{ formatFechaCorta(n.fecha) }}</span>
+              </div>
+              <strong>{{ n.titulo }}</strong>
+              <p>{{ n.mensaje }}</p>
+              <button v-if="!n.leida" type="button" class="btn btn-secondary btn-sm"
+                @click="appStore.marcarNotificacionLeida(n.id)">Marcar como leído</button>
+              <span v-else class="text-xs text-muted">Leído</span>
+            </article>
+          </div>
+          <p v-else class="text-sm text-muted">No hay avisos de rotura.</p>
+        </section>
+      </div>
+
       <main class="workspace">
         <FlujoDelDia class="flujo-bar" />
         <RouterView v-slot="{ Component }">
@@ -73,15 +107,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import logoMarca from '../assets/aguamantra-marca.jpg';
-import { ClipboardList, LayoutDashboard, MapPinned, Smartphone, Truck, Warehouse } from 'lucide-vue-next';
+import { Bell, ClipboardList, LayoutDashboard, MapPinned, Smartphone, Truck, Warehouse } from 'lucide-vue-next';
 import FlujoDelDia from '../components/FlujoDelDia.vue';
 import { appStore } from '../store/useAppStore';
 import { notificar } from '../store/useToast';
+import { formatFechaCorta } from '../utils/formato';
 
 const route = useRoute();
+
+const mostrarAvisos = ref(false);
+const avisosNoLeidos = computed(() => appStore.state.notificacionesInternas.filter(n => !n.leida).length);
 
 // Lo que el chofer registra en su app (otra pestaña) aparece aquí al instante
 appStore.alRecibirActividadRemota(nuevas => {
@@ -400,6 +438,83 @@ const usuario = computed(() => {
   border-color: var(--zun-rojo);
 }
 
+.avisos-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--zun-border);
+  border-radius: var(--radius-pill);
+  background: var(--zun-blanco);
+  color: var(--zun-text);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.avisos-btn:hover {
+  border-color: var(--acento);
+}
+
+.avisos-count {
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--zun-rojo);
+  color: #ffffff;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+.avisos-modal {
+  max-width: 640px;
+}
+
+.avisos-nota {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--zun-ambar-light);
+  color: #78350f;
+  font-size: 0.8rem;
+}
+
+.avisos-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.aviso {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--zun-border);
+  border-radius: var(--radius-sm);
+  background: var(--zun-blanco);
+}
+
+.aviso.leido {
+  opacity: 0.7;
+}
+
+.aviso p {
+  color: var(--zun-gris-dark);
+  font-size: 0.84rem;
+}
+
+.aviso-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .flujo-bar {
   margin-bottom: 22px;
 }
@@ -561,6 +676,7 @@ const usuario = computed(() => {
   }
 
   .topbar-title p,
+  .avisos-label,
   .stock-label,
   .stock-breakdown {
     display: none;

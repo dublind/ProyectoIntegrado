@@ -1,5 +1,5 @@
 import { reactive, computed } from 'vue';
-import type { Actividad, Cliente, Pedido, Vehiculo, TurnoDespacho, CuentaBancaria, InventarioBodega, MedioPago, RegistroEnvase } from '../types';
+import type { Actividad, Cliente, Pedido, Vehiculo, TurnoDespacho, CuentaBancaria, InventarioBodega, MedioPago, RegistroEnvase, RegistroRotura, NotificacionInterna } from '../types';
 import { BODEGA_CENTRAL, geocodificarSimulado, ordenarRutaLocal } from '../utils/geo';
 import { optimizarOrden } from '../utils/rutas';
 import { ahoraISO, diasDesde, hoyISO } from '../utils/formato';
@@ -251,6 +251,21 @@ const inventarioInicial: InventarioBodega = {
   bajasDefinitivas60d: 5
 };
 
+// Rotos que ya estaban en bodega al iniciar la demo, sin detalle individual
+function roturasPrevias(cantidad: number): RegistroRotura[] {
+  return Array.from({ length: Math.max(0, cantidad) }, (_, i) => ({
+    id: `rotura-previa-${i + 1}`,
+    pedidoId: '',
+    codigoPedido: 'Registro previo',
+    clienteNombre: 'Sin detalle disponible',
+    producto: 'Agua Purificada 20L Sellada',
+    cantidad: 1,
+    detalle: 'Merma inicial sin detalle individual.',
+    fecha: haceDias(10),
+    estado: 'pendiente_baja'
+  }));
+}
+
 const STOCK_REFERENCIA_INICIAL =
   inventarioInicial.llenosCentral + inventarioInicial.vaciosCentral + inventarioInicial.enTransito +
   inventarioInicial.pendientesDevolucion + inventarioInicial.rotosBodega + inventarioInicial.bajasDefinitivas60d;
@@ -297,6 +312,9 @@ class AppStore {
     vehiculos: clonar(vehiculosIniciales),
     cuentasBancarias: clonar(cuentasBancariasIniciales),
     registrosEnvases: clonar(registrosEnvasesIniciales),
+    // Bodega de rotos con historial por rotura y avisos internos (PBI 68)
+    roturasBodega: roturasPrevias(inventarioInicial.rotosBodega),
+    notificacionesInternas: [] as NotificacionInterna[],
     // Un turno por furgón y por día; la capacidad diaria del furgón es su N_max
     turnos: clonar(turnosIniciales),
     inventario: clonar(inventarioInicial),
@@ -368,6 +386,9 @@ class AppStore {
       if (data) {
         const parsed = JSON.parse(data);
         Object.assign(this.state, parsed);
+        // Datos guardados antes del PBI 68: se reconstruye el registro de rotos desde el contador
+        if (!Array.isArray(parsed.roturasBodega)) this.state.roturasBodega = roturasPrevias(this.state.inventario.rotosBodega);
+        if (!Array.isArray(parsed.notificacionesInternas)) this.state.notificacionesInternas = [];
       }
     } catch (e) {
       console.warn('No se pudo cargar desde localStorage', e);
@@ -391,7 +412,12 @@ class AppStore {
       .filter(r => diasDesde(r.fechaOrigen) >= 30)
       .reduce((acc, r) => acc + r.cantidad, 0);
 
-    // 3. Deuda en ficha de cliente y alerta en pedidos aún no cerrados
+    // 3. Rotos en bodega: los registrados que aún esperan baja del administrador
+    this.state.inventario.rotosBodega = this.state.roturasBodega
+      .filter(r => r.estado === 'pendiente_baja')
+      .reduce((acc, r) => acc + r.cantidad, 0);
+
+    // 4. Deuda en ficha de cliente y alerta en pedidos aún no cerrados
     this.state.clientes.forEach(c => {
       c.deudaEnvases = activos.filter(r => r.clienteId === c.id).reduce((acc, r) => acc + r.cantidad, 0);
     });
@@ -1060,6 +1086,8 @@ class AppStore {
     const pedido = this.state.pedidos.find(p => p.id === pedidoId);
     const turno = this.turnoDePedido(pedidoId);
     if (!pedido || !turno) return;
+    // Una parada ya cerrada no admite una segunda incidencia (evita duplicar rotos o deudas)
+    if (pedido.estado === 'entregado' || pedido.estado === 'parcial') return;
 
     if (tipo === 'roto' && !opciones.aceptacionCliente) {
       throw new Error('La entrega parcial requiere informar al cliente y registrar su aceptación.');
@@ -1098,8 +1126,8 @@ class AppStore {
       pedido.aceptacionParcial = true;
       pedido.cantidadEntregada = pedido.cantidadBidones - k;
       pedido.envasesNoDevueltos = 0;
-      this.state.inventario.rotosBodega += k;
       turno.botellonesCargados = Math.max(0, turno.botellonesCargados - k);
+      this.registrarRotura(pedido, k, detalle);
     }
 
     const textos = {
@@ -1208,13 +1236,74 @@ class AppStore {
     }
   }
 
-  // Exclusivo Administrador / Erick: Autorizar baja definitiva física
+  // PBI 68: cada rotura queda registrada en bodega de rotos y genera avisos para administración y cliente
+  private registrarRotura(pedido: Pedido, cantidad: number, detalle: string) {
+    const fecha = ahoraISO();
+    const evento = nuevoId('rot');
+    this.state.roturasBodega.unshift({
+      id: evento,
+      pedidoId: pedido.id,
+      codigoPedido: pedido.codigo,
+      clienteNombre: pedido.clienteNombre,
+      producto: pedido.tipoProducto,
+      cantidad,
+      detalle: detalle.trim() || 'Sin detalle informado.',
+      fecha,
+      estado: 'pendiente_baja'
+    });
+    const avisos: NotificacionInterna[] = [
+      {
+        id: `${evento}-administrador`,
+        tipo: 'rotura',
+        destinatario: 'administrador',
+        pedidoId: pedido.id,
+        clienteNombre: pedido.clienteNombre,
+        titulo: `Rotura informada en ${pedido.codigo}`,
+        mensaje: `Se registraron ${cantidad} botellón(es) dañado(s) en el trayecto. Detalle: ${detalle.trim() || 'sin detalle'}.`,
+        fecha,
+        leida: false
+      },
+      {
+        id: `${evento}-cliente`,
+        tipo: 'rotura',
+        destinatario: 'cliente',
+        pedidoId: pedido.id,
+        clienteNombre: pedido.clienteNombre,
+        titulo: `Novedad en tu pedido ${pedido.codigo}`,
+        mensaje: `Por un incidente en ruta, el saldo de ${cantidad} botellón(es) se entregará en el siguiente turno sin costo adicional.`,
+        fecha,
+        leida: false
+      }
+    ];
+    this.state.notificacionesInternas.unshift(...avisos);
+    this.state.notificacionesInternas.splice(50);
+  }
+
+  marcarNotificacionLeida(notificacionId: string) {
+    const aviso = this.state.notificacionesInternas.find(n => n.id === notificacionId);
+    if (!aviso || aviso.leida) return;
+    aviso.leida = true;
+    this.guardarEnLocalStorage();
+  }
+
+  // Exclusivo Administrador: autoriza la baja física de rotos (los más antiguos primero) sin borrar su historial
   autorizarBajaRotoAdmin(cantidad = 1) {
-    if (this.state.inventario.rotosBodega >= cantidad) {
-      this.state.inventario.rotosBodega -= cantidad;
-      this.state.inventario.bajasDefinitivas60d += cantidad;
-      this.sincronizarInventario();
+    if (!Number.isInteger(cantidad) || cantidad <= 0) return;
+    let restante = cantidad;
+    const pendientes = this.state.roturasBodega.filter(r => r.estado === 'pendiente_baja').reverse();
+    for (const rotura of pendientes) {
+      if (restante === 0) break;
+      const autorizada = Math.min(rotura.cantidad, restante);
+      if (autorizada === rotura.cantidad) {
+        rotura.estado = 'baja_definitiva';
+      } else {
+        rotura.cantidad -= autorizada;
+        this.state.roturasBodega.push({ ...rotura, id: nuevoId('rot'), cantidad: autorizada, estado: 'baja_definitiva' });
+      }
+      restante -= autorizada;
+      this.state.inventario.bajasDefinitivas60d += autorizada;
     }
+    if (restante < cantidad) this.sincronizarInventario();
   }
 
   // Exclusivo Administrador: baja de envase no retornado tras 60 días (queda marca en ficha)
@@ -1240,6 +1329,8 @@ class AppStore {
     this.state.registrosEnvases = clonar(registrosEnvasesIniciales);
     this.state.turnos = clonar(turnosIniciales);
     this.state.inventario = clonar(inventarioInicial);
+    this.state.roturasBodega = roturasPrevias(inventarioInicial.rotosBodega);
+    this.state.notificacionesInternas = [];
     this.state.actividad = [];
     this.state.stockReferencia = STOCK_REFERENCIA_INICIAL;
     this.sincronizarInventario();

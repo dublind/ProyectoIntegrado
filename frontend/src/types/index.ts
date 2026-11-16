@@ -70,6 +70,32 @@ export interface Pedido {
   };
 }
 
+// Rotura física registrada en la bodega de rotos (PBI 68). Se conserva como historial tras la baja.
+export interface RegistroRotura {
+  id: string;
+  pedidoId: string;
+  codigoPedido: string;
+  clienteNombre: string;
+  producto: string;
+  cantidad: number;
+  detalle: string;
+  fecha: string;
+  estado: 'pendiente_baja' | 'baja_definitiva';
+}
+
+// Aviso interno generado al informar una rotura (para administración y el cliente del pedido)
+export interface NotificacionInterna {
+  id: string;
+  tipo: 'rotura';
+  destinatario: 'administrador' | 'cliente';
+  pedidoId: string;
+  clienteNombre: string;
+  titulo: string;
+  mensaje: string;
+  fecha: string;
+  leida: boolean;
+}
+
 // Envase vacío que el cliente no devolvió (PBI 72: cliente, fecha y antigüedad)
 export interface RegistroEnvase {
   id: string;

@@ -116,6 +116,39 @@
       </div>
     </section>
 
+    <!-- Bodega de rotos con historial por rotura (PBI 68) -->
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2 class="card-title">Registro de la bodega de rotos</h2>
+          <p class="card-sub">Cada rotura informada en ruta queda registrada hasta que el administrador autorice su baja
+            definitiva. El historial se conserva después de la baja.</p>
+        </div>
+        <span class="badge badge-danger">{{ inv.rotosBodega }} pendientes de baja</span>
+      </div>
+      <div v-if="roturas.length === 0" class="empty-box">No hay roturas registradas en bodega.</div>
+      <div v-else class="table-wrap">
+        <table class="mini-table">
+          <thead>
+            <tr><th>Fecha</th><th>Pedido</th><th>Cantidad</th><th>Detalle</th><th>Estado</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in roturas" :key="r.id">
+              <td class="font-mono">{{ formatFechaCorta(r.fecha) }}</td>
+              <td>{{ r.codigoPedido }}<span v-if="r.pedidoId" class="text-xs text-muted"> · {{ r.clienteNombre }}</span></td>
+              <td class="font-mono">{{ r.cantidad }}</td>
+              <td class="text-sm">{{ r.detalle }}</td>
+              <td>
+                <span :class="['badge', r.estado === 'pendiente_baja' ? 'badge-danger' : 'badge-neutral']">
+                  {{ r.estado === 'pendiente_baja' ? 'Pendiente de baja' : 'Baja autorizada' }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- Envases pendientes de devolución (PBI 72, criterios 1-3) -->
     <section class="card">
       <div class="card-head">
@@ -294,6 +327,10 @@ function generarDemo() {
 }
 const totalFisicoBodega = computed(() => inv.value.llenosCentral + inv.value.vaciosCentral + inv.value.rotosBodega);
 const historial = computed(() => appStore.state.registrosEnvases.filter(r => r.estado !== 'pendiente').slice().reverse());
+
+// Registros de rotura: primero los pendientes de baja, luego el historial
+const roturas = computed(() => [...appStore.state.roturasBodega]
+  .sort((a, b) => Number(b.estado === 'pendiente_baja') - Number(a.estado === 'pendiente_baja')));
 
 const confirmarBajaRoto = ref(false);
 const confirmarReset = ref(false);
