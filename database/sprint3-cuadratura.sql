@@ -93,3 +93,14 @@ SELECT 'TRANSITO_SIN_TURNO_EN_RUTA', NULL::BIGINT,
 FROM v_inventario_clasificado
 WHERE ubicacion = 'TRANSITO' AND saldo > 0
   AND NOT EXISTS (SELECT 1 FROM turno WHERE estado = 'en_ruta');
+
+-- Estado compartido del panel y la app del chofer (puente hasta el PBI 102).
+-- Una sola fila con versión para control de concurrencia optimista.
+CREATE TABLE IF NOT EXISTS estado_compartido (
+    id              INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    version         INTEGER NOT NULL DEFAULT 0,
+    datos           JSONB,
+    actualizado_en  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    actualizado_por TEXT
+);
+INSERT INTO estado_compartido (id) VALUES (1) ON CONFLICT (id) DO NOTHING;

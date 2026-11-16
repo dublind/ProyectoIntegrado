@@ -1,5 +1,6 @@
 import { reactive } from 'vue';
 import { api, type User } from '../services/api';
+import { detenerSincronizacion } from './sincronizacion';
 
 // Sesión real contra el backend (cookie HttpOnly pi_session). El panel y la app del chofer
 // quedan detrás del inicio de sesión: nada es público en el despliegue.
@@ -49,6 +50,7 @@ export async function iniciarSesion(username: string, password: string) {
 }
 
 export async function cerrarSesion() {
+  detenerSincronizacion();
   try {
     await api('/auth/logout', 'POST', {});
   } finally {

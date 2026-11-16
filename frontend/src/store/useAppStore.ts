@@ -345,16 +345,44 @@ class AppStore {
     window.addEventListener('storage', e => {
       if (e.key !== STORAGE_KEY || !e.newValue) return;
       try {
-        const remoto = JSON.parse(e.newValue);
-        const idsLocales = new Set(this.state.actividad.map(a => a.id));
-        const nuevas = ((remoto.actividad ?? []) as Actividad[]).filter(a => !idsLocales.has(a.id));
-        const { modoOffline: _offlineRemoto, ...resto } = remoto;
-        Object.assign(this.state, resto);
-        if (nuevas.length) this.oyentesRemotos.forEach(fn => fn(nuevas));
+        this.aplicarEstadoRemoto(JSON.parse(e.newValue), false);
       } catch (err) {
         console.warn('No se pudo sincronizar con otra pestaña', err);
       }
     });
+  }
+
+  /**
+   * Aplica el estado que llegó de otra pestaña o de otro dispositivo (servidor).
+   * El modo offline es propio de cada dispositivo y no se copia.
+   */
+  aplicarEstadoRemoto(remoto: Record<string, unknown>, persistir = true) {
+    const idsLocales = new Set(this.state.actividad.map(a => a.id));
+    const nuevas = ((remoto.actividad ?? []) as Actividad[]).filter(a => !idsLocales.has(a.id));
+    const { modoOffline: _offlineRemoto, ...resto } = remoto;
+    Object.assign(this.state, resto);
+    if (!Array.isArray(remoto.roturasBodega)) this.state.roturasBodega = roturasPrevias(this.state.inventario.rotosBodega);
+    if (!Array.isArray(remoto.notificacionesInternas)) this.state.notificacionesInternas = [];
+    if (persistir) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+      } catch {
+        /* sin almacenamiento local: el estado sigue en memoria */
+      }
+    }
+    if (nuevas.length) this.oyentesRemotos.forEach(fn => fn(nuevas));
+  }
+
+  // Estado que se comparte con los demás dispositivos (sin el modo offline local)
+  exportarEstado() {
+    const { modoOffline: _local, ...compartido } = JSON.parse(JSON.stringify(this.state));
+    return compartido as Record<string, unknown>;
+  }
+
+  // Avisa a la sincronización con el servidor cada vez que el estado cambia localmente
+  private oyentesGuardado: (() => void)[] = [];
+  alGuardar(fn: () => void) {
+    this.oyentesGuardado.push(fn);
   }
 
   // Permite al panel avisar lo que hizo el chofer en otra pestaña
@@ -374,6 +402,7 @@ class AppStore {
     } catch (e) {
       console.warn('No se pudo guardar en localStorage', e);
     }
+    this.oyentesGuardado?.forEach(fn => fn());
   }
 
   private cargarDesdeLocalStorage() {

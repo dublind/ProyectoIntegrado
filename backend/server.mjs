@@ -83,7 +83,9 @@ export function createServer(db, options = {}) {
       let raw = '';
       for await (const chunk of req) {
         raw += chunk;
-        fail(raw.length > 65536, 'Solicitud demasiado grande', 413);
+        // El estado compartido del panel es más grande que una solicitud normal
+        const limit = url.pathname === '/api/shared-state' ? 4 * 1024 * 1024 : 65536;
+        fail(raw.length > limit, 'Solicitud demasiado grande', 413);
       }
       let body = {};
       if (raw) {
@@ -182,7 +184,8 @@ export function createServer(db, options = {}) {
       }
       return send(200, result);
     } catch (error) {
-      if (error instanceof ApiError) return send(error.status, { error: error.message });
+      if (error instanceof ApiError)
+        return send(error.status, { error: error.message, ...(error.payload ?? {}) });
       if (error.code?.startsWith('23'))
         return send(409, { error: 'Los datos no cumplen las restricciones del modelo' });
       console.error('Error interno:', error.message);

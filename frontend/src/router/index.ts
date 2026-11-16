@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import AdminLayout from '../layouts/AdminLayout.vue';
 import { cargarSesion, inicioPorRol } from '../store/useSession';
 import { puedeEntrar } from './acceso';
+import { iniciarSincronizacion } from '../store/sincronizacion';
 
 const routes: RouteRecordRaw[] = [
   {
@@ -92,6 +93,8 @@ router.beforeEach(async (to) => {
   const user = await cargarSesion();
   if (to.meta.publica) return user && to.name === 'Login' ? inicioPorRol(user) : true;
   if (!user) return { name: 'Login', query: to.fullPath === '/' ? {} : { redirect: to.fullPath } };
+  // Panel y app del chofer comparten el mismo estado en el servidor
+  iniciarSincronizacion();
   if (!puedeEntrar(to, user)) return inicioPorRol(user);
   return true;
 });

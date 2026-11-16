@@ -860,3 +860,40 @@ test('PBI 69: v_inconsistencias reporta rutas, condiciones y entregas que no cua
     await local.close();
   }
 });
+
+test('Estado compartido: panel y chofer ven lo mismo y un conflicto no pisa datos', async () => {
+  const initial = await call('/shared-state', 'GET', undefined, 'administrativo');
+  const v = initial.version;
+  // El panel guarda sobre la versión vigente
+  const saved = await call(
+    '/shared-state',
+    'POST',
+    { version: v, datos: { pedidos: [1] } },
+    'administrativo',
+  );
+  assert.equal(saved.version, v + 1);
+  assert.equal(saved.actualizado_por, 'administrativo');
+  // El chofer lo ve desde su dispositivo
+  const seen = await call('/shared-state', 'GET', undefined, 'chofer');
+  assert.deepEqual(seen.datos, { pedidos: [1] });
+  // Sin cambios no se reenvía el estado
+  assert.equal(
+    (await call(`/shared-state?version=${v + 1}`, 'GET', undefined, 'chofer')).sinCambios,
+    true,
+  );
+  // El chofer guarda; un guardado del panel sobre la versión vieja recibe 409 con lo vigente
+  await call('/shared-state', 'POST', { version: v + 1, datos: { pedidos: [1, 2] } }, 'chofer');
+  const conflict = await call(
+    '/shared-state',
+    'POST',
+    { version: v + 1, datos: { pedidos: [] } },
+    'administrativo',
+    409,
+  );
+  assert.equal(conflict.version, v + 2);
+  assert.deepEqual(conflict.datos, { pedidos: [1, 2] });
+  // Validaciones y sesión obligatoria
+  await call('/shared-state', 'POST', { version: -1, datos: {} }, 'administrativo', 400);
+  await call('/shared-state', 'POST', { version: v + 2, datos: [] }, 'administrativo', 400);
+  await call('/shared-state', 'GET', undefined, 'nadie', 401);
+});
