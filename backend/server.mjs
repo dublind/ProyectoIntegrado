@@ -21,9 +21,11 @@ export function createServer(db, options = {}) {
     };
     try {
       const url = new URL(req.url, 'http://127.0.0.1');
+      const secure = req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
+      if (secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
       const method = req.method;
       if (url.pathname === '/api/health')
-        return send(200, { ok: true, mode: 'PostgreSQL local', version: 1 });
+        return send(200, { ok: true, mode: db.mode ?? 'PostgreSQL local', version: 1 });
       if (!url.pathname.startsWith('/api/')) {
         const pathname = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
         const base = path.resolve(root, 'frontend/dist');
@@ -55,13 +57,23 @@ export function createServer(db, options = {}) {
       }
       if (method !== 'GET') {
         const origin = req.headers.origin;
+        // Mismo origen que el servidor publicado (Railway) o el entorno de desarrollo local
+        const sameHost = (() => {
+          try {
+            return new URL(origin).host === req.headers.host;
+          } catch {
+            return false;
+          }
+        })();
         fail(
           origin &&
+            !sameHost &&
             ![
               'http://127.0.0.1:5173',
               'http://localhost:5173',
               'http://127.0.0.1:8787',
               'http://localhost:8787',
+              ...(process.env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()) ?? []),
             ].includes(origin),
           'Origen no autorizado',
           403,
@@ -99,7 +111,10 @@ export function createServer(db, options = {}) {
       }
       if (url.pathname === '/api/auth/login') {
         fail(method !== 'POST', 'Método no permitido', 405);
-        const key = req.socket.remoteAddress;
+        // Detrás del proxy de Railway la IP real llega en X-Forwarded-For
+        const key =
+          (process.env.TRUST_PROXY && req.headers['x-forwarded-for']?.split(',')[0].trim()) ||
+          req.socket.remoteAddress;
         const now = Date.now();
         let attempt = attempts.get(key);
         if (!attempt || now - attempt.start > 60000) attempt = { start: now, count: 0 };
@@ -125,7 +140,7 @@ export function createServer(db, options = {}) {
         sessions.set(token, { user: publicUser, expires: now + 8 * 3600000 });
         res.setHeader(
           'Set-Cookie',
-          `pi_session=${token}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=28800`,
+          `pi_session=${token}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=28800${secure}`,
         );
         return send(200, publicUser);
       }
@@ -140,7 +155,10 @@ export function createServer(db, options = {}) {
       if (url.pathname === '/api/auth/logout') {
         fail(method !== 'POST', 'Método no permitido', 405);
         sessions.delete(token);
-        res.setHeader('Set-Cookie', 'pi_session=; HttpOnly; SameSite=Strict; Path=/api; Max-Age=0');
+        res.setHeader(
+          'Set-Cookie',
+          `pi_session=; HttpOnly; SameSite=Strict; Path=/api; Max-Age=0${secure}`,
+        );
         return send(200, { ok: true });
       }
       fail(!['GET', 'POST', 'PATCH', 'DELETE'].includes(method), 'Método no permitido', 405);
@@ -170,25 +188,34 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   } catch (e) {
     if (e.code !== 'ENOENT') throw e;
   }
+  // En la nube (PostgreSQL gestionado) no hay base en disco que proteger con el candado local
+  const cloud = Boolean(process.env.DATABASE_URL);
   await mkdir(root + '/.local', { recursive: true });
   const lock = root + '/.local/server.pid';
-  try {
-    const pid = Number(await readFile(lock, 'utf8'));
+  if (!cloud)
     try {
-      process.kill(pid, 0);
-      console.error('Ya hay una instancia local activa.');
-      process.exit(1);
+      const pid = Number(await readFile(lock, 'utf8'));
+      try {
+        process.kill(pid, 0);
+        console.error('Ya hay una instancia local activa.');
+        process.exit(1);
+      } catch (e) {
+        if (e.code !== 'ESRCH') throw e;
+      }
     } catch (e) {
-      if (e.code !== 'ESRCH') throw e;
+      if (e.code !== 'ENOENT') throw e;
     }
-  } catch (e) {
-    if (e.code !== 'ENOENT') throw e;
-  }
-  await writeFile(lock, String(process.pid));
+  if (!cloud) await writeFile(lock, String(process.pid));
   const db = await openDatabase();
   const server = createServer(db);
-  server.listen(Number(process.env.PORT ?? 8787), '127.0.0.1', () =>
-    console.log('API local: http://127.0.0.1:8787 — credenciales en .local/credenciales.txt'),
+  const port = Number(process.env.PORT ?? 8787);
+  const host = process.env.HOST ?? (process.env.RAILWAY_ENVIRONMENT ? '0.0.0.0' : '127.0.0.1');
+  server.listen(port, host, () =>
+    console.log(
+      cloud
+        ? `API (${db.mode}) escuchando en ${host}:${port}`
+        : `API local: http://127.0.0.1:${port} — credenciales en .local/credenciales.txt`,
+    ),
   );
   server.on('error', async (e) => {
     console.error(e.message);

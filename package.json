@@ -15,7 +15,8 @@
     "format:backend:check": "prettier --check \"backend/**/*.mjs\""
   },
   "dependencies": {
-    "@electric-sql/pglite": "0.5.9"
+    "@electric-sql/pglite": "0.5.9",
+    "pg": "^8.23.1"
   },
   "engines": {
     "node": ">=22"

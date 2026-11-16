@@ -48,6 +48,13 @@ const routes = [
     meta: { title: 'Ruta del chofer' }
   },
   {
+    // Sistema conectado a la API y a PostgreSQL, con inicio de sesión por perfil
+    path: '/sistema',
+    name: 'Sistema',
+    component: () => import('../views/SprintAppView.vue'),
+    meta: { title: 'Sistema con base de datos' }
+  },
+  {
     path: '/admin',
     redirect: '/indicadores'
   },
