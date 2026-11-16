@@ -8,7 +8,7 @@
     "dev:frontend": "npm --prefix ./frontend run dev --",
     "start": "node backend/server.mjs",
     "test": "node --test backend/tests/*.test.mjs",
-    "build": "npm --prefix frontend run build",
+    "build": "npm ci --prefix frontend --include=dev && npm --prefix frontend run build",
     "check": "npm test && npm run build",
     "backup": "node scripts/backup.mjs",
     "format:backend": "prettier --write \"backend/**/*.mjs\"",
