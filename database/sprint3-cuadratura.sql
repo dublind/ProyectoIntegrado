@@ -104,3 +104,16 @@ CREATE TABLE IF NOT EXISTS estado_compartido (
     actualizado_por TEXT
 );
 INSERT INTO estado_compartido (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- ER-07 / bug 99 (defensa en profundidad): RLS activo en todas las tablas del esquema public.
+-- El servidor se conecta como dueño de las tablas (o rol con BYPASSRLS en Supabase), así que
+-- la aplicación no cambia; cualquier otro rol (p. ej. anon/authenticated de la Data API de
+-- Supabase) queda sin acceso mientras no existan políticas explícitas.
+DO $$
+DECLARE t record;
+BEGIN
+  FOR t IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+           WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT c.relrowsecurity LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.relname);
+  END LOOP;
+END $$;
