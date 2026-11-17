@@ -27,6 +27,8 @@ Decisión del PO (16/11/2026): se amplía el backend para conservar el calendari
 | Salir y cerrar ruta (chofer u oficina) | `POST /api/turns/:id/start`, `POST /api/turns/:id/close` |
 | Entrega con vacíos de entregas anteriores | `POST /api/stops/:id/deliver` con `retiros` |
 
+Cuando la fuente del recorrido es `manual`, una respuesta geográfica tardía no puede reemplazar el orden. El orden manual se conserva en `parada.orden`, se invalida al cambiar las paradas y lo reciben en ese mismo orden tanto el despacho como la app del chofer.
+
 Reglas en el servidor: solo pedidos pagados y autorizados, cupo diario del furgón, un domicilio un furgón por día, no mover pedidos que ya salieron, y bloqueo de fila para que dos planificaciones simultáneas no superen la capacidad (CP-20).
 
 Otros cambios: recargo de delivery por comuna calculado por el servidor (`backend/shared/comunas.mjs`, debe coincidir con `frontend/src/utils/comunas.ts`); aviso interno y mensaje al cliente por rotura en ruta (PBI 68, tarea 113); el reporte de rotura guarda parada, quién lo clasificó y cuándo (tarea 114); el cierre espera que la oficina clasifique las roturas de esa ruta.
