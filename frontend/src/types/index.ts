@@ -17,6 +17,7 @@ export interface Coordenadas {
 
 export interface Cliente {
   id: string;
+  notaNoRetornados?: string; // mensaje persistente por baja a 60 días (solo administrativo)
   nombre: string;
   telefono: string;
   direccion: string;
@@ -33,6 +34,11 @@ export interface Cliente {
 export interface Pedido {
   id: string;
   codigo: string;
+  paradaId?: string; // parada del turno (vistas por turno y app del chofer)
+  turnoId?: string;
+  requiereAutorizacion?: boolean; // cliente con envases no retornados: el administrativo decide
+  autorizacion?: 'LIBRE' | 'PENDIENTE' | 'CON_RETORNO' | 'SIN_RETORNO';
+  pendienteSincronizar?: boolean; // acción del chofer guardada sin conexión
   tipo?: 'entrega' | 'retiro'; // retiro: parada solo para recoger envases pendientes (sin llenos ni cobro)
   retiroEnvases?: number; // vacíos a recoger en una parada de retiro
   retiroRealizado?: number; // vacíos efectivamente recogidos en la parada de retiro
@@ -73,6 +79,7 @@ export interface Pedido {
 // Rotura física registrada en la bodega de rotos (PBI 68). Se conserva como historial tras la baja.
 export interface RegistroRotura {
   id: string;
+  reporteId?: string; // reporte del chofer (falta en roturas previas sin detalle)
   pedidoId: string;
   codigoPedido: string;
   clienteNombre: string;
@@ -80,14 +87,15 @@ export interface RegistroRotura {
   cantidad: number;
   detalle: string;
   fecha: string;
-  estado: 'pendiente_baja' | 'baja_definitiva';
+  // por_clasificar: el chofer la informó y la oficina aún no la pasa a la bodega de rotos
+  estado: 'por_clasificar' | 'pendiente_baja' | 'baja_definitiva';
 }
 
 // Aviso interno generado al informar una rotura (para administración y el cliente del pedido)
 export interface NotificacionInterna {
   id: string;
-  tipo: 'rotura';
-  destinatario: 'administrador' | 'cliente';
+  tipo: string; // ROTURA, RETIRO_PENDIENTE, NO_RETORNARON, BAJA_ELEGIBLE, PAGO_APROBADO, SOLICITUD...
+  destinatario: string; // perfil que debe atenderlo
   pedidoId: string;
   clienteNombre: string;
   titulo: string;
@@ -113,7 +121,8 @@ export interface Vehiculo {
   patente: string;
   modelo: string;
   capacidadMax: number; // N_max parametrizable (ej: 12, 20 o más)
-  choferAsignado: string;
+  choferAsignado: string; // nombre del chofer
+  chofer?: string; // usuario del chofer
   activo: boolean;
 }
 
@@ -123,15 +132,19 @@ export interface TurnoDespacho {
   turno: 'Mañana' | 'Tarde';
   vehiculoId: string;
   choferNombre: string;
+  chofer?: string; // usuario del chofer del turno
+  patente?: string; // furgón del turno (la app del chofer no recibe la lista de vehículos)
   pedidosIds: string[];
   capacidadMax: number;
   botellonesCargados: number; // envases a bordo (llenos + vacíos intercambiados)
+  llenosABordo?: number;
+  vaciosABordo?: number;
   estado: 'preparacion' | 'en_ruta' | 'finalizado';
   // Orden óptimo de paradas por tiempo de manejo (ids de pedido), calculado al planificar
   ordenParadas?: string[];
   rutaKm?: number;
   rutaMin?: number;
-  rutaFuente?: 'calles' | 'aproximada'; // calles: OSRM con tiempos reales; aproximada: cálculo local sin conexión
+  rutaFuente?: 'calles' | 'aproximada' | 'manual'; // calles: OSRM; aproximada: cálculo local; manual: orden del planificador
 }
 
 export interface CuentaBancaria {

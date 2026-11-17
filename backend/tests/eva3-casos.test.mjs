@@ -612,7 +612,6 @@ test('CP-18: inyección SQL y XSS se guardan como texto', async () => {
 });
 
 test.todo('CP-19: bloqueo tras 5 intentos y MFA del administrador (no implementado, ER-05)');
-test.todo('CP-20: escrituras simultáneas con control de versión 409 (no implementado, ER-06)');
 
 test('CP-22: un fallo de envío se reintenta y el cliente recibe un solo aviso', async () => {
   await db.query(
@@ -970,39 +969,33 @@ test('PBI 69: v_inconsistencias reporta rutas, condiciones y entregas que no cua
   }
 });
 
-test('Estado compartido: panel y chofer ven lo mismo y un conflicto no pisa datos', async () => {
-  const initial = await call('/shared-state', 'GET', undefined, 'administrativo');
-  const v = initial.version;
-  // El panel guarda sobre la versión vigente
-  const saved = await call(
-    '/shared-state',
-    'POST',
-    { version: v, datos: { pedidos: [1] } },
-    'administrativo',
+test('CP-20: escrituras simultáneas no se pisan; la segunda recibe 409 y el estado es el de la primera', async () => {
+  // El puente de estado compartido se retiró en el PBI 102: cada acción va a su endpoint
+  await call('/shared-state', 'GET', undefined, 'administrativo', 404);
+  const small = await call('/vehicles', 'POST', {
+    patente: 'CP20-' + randomUUID().slice(0, 4),
+    modelo: 'Furgón concurrencia',
+    capacidad: 2,
+  });
+  const fecha = await value('SELECT (CURRENT_DATE + 40)::TEXT AS n');
+  const a = await newOrder(2);
+  const b = await newOrder(2);
+  await pay(a.p);
+  await pay(b.p);
+  // Dos administrativos planifican a la vez en un furgón con cupo para uno solo
+  const plan = (o) =>
+    fetch(base + `/orders/${o.p.id_pedido}/plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookies.administrativo },
+      body: JSON.stringify({ vehiculo_id: small.id, fecha }),
+    });
+  const statuses = (await Promise.all([plan(a), plan(b)])).map((r) => r.status).sort();
+  assert.deepEqual(statuses, [200, 409]);
+  const load = await value(
+    `SELECT COALESCE(SUM(pa.cantidad),0)::INT n FROM parada pa JOIN turno t ON t.id=pa.turno_id
+     WHERE t.vehiculo_id=$1 AND t.fecha=$2`,
+    [small.id, fecha],
   );
-  assert.equal(saved.version, v + 1);
-  assert.equal(saved.actualizado_por, 'administrativo');
-  // El chofer lo ve desde su dispositivo
-  const seen = await call('/shared-state', 'GET', undefined, 'chofer');
-  assert.deepEqual(seen.datos, { pedidos: [1] });
-  // Sin cambios no se reenvía el estado
-  assert.equal(
-    (await call(`/shared-state?version=${v + 1}`, 'GET', undefined, 'chofer')).sinCambios,
-    true,
-  );
-  // El chofer guarda; un guardado del panel sobre la versión vieja recibe 409 con lo vigente
-  await call('/shared-state', 'POST', { version: v + 1, datos: { pedidos: [1, 2] } }, 'chofer');
-  const conflict = await call(
-    '/shared-state',
-    'POST',
-    { version: v + 1, datos: { pedidos: [] } },
-    'administrativo',
-    409,
-  );
-  assert.equal(conflict.version, v + 2);
-  assert.deepEqual(conflict.datos, { pedidos: [1, 2] });
-  // Validaciones y sesión obligatoria
-  await call('/shared-state', 'POST', { version: -1, datos: {} }, 'administrativo', 400);
-  await call('/shared-state', 'POST', { version: v + 2, datos: [] }, 'administrativo', 400);
-  await call('/shared-state', 'GET', undefined, 'nadie', 401);
+  assert.equal(load, 2);
+  await call('/state', 'GET', undefined, 'nadie', 401);
 });

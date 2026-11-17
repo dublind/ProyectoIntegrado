@@ -52,5 +52,5 @@ Railway ejecuta `npm ci`, `npm run build` (instala y compila el frontend) y `npm
 
 ## Verificado
 
-- `/api/health` responde `{"mode":"PostgreSQL"}`; login de los tres perfiles, estado, estado compartido y exportaciones responden en producción contra Supabase.
+- `/api/health` responde `{"mode":"PostgreSQL"}`; login de los tres perfiles, estado y exportaciones responden en producción contra Supabase.
 - Un redeploy conserva los datos: viven en Supabase, no en el contenedor.

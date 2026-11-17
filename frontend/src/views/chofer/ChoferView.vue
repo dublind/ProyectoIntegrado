@@ -8,24 +8,28 @@
         <button v-else type="button" class="icon-btn" aria-label="Cerrar sesión" title="Cerrar sesión" @click="salir"><LogOut :size="18" /></button>
         <div class="app-bar-title">
           <strong>{{ tituloEtapa }}</strong>
-          <label class="van-select">
+          <label v-if="furgones.length" class="van-select">
             <span class="sr-only">Furgón</span>
             <select v-model="vehiculoId" aria-label="Elegir furgón">
-              <option v-for="v in appStore.state.vehiculos" :key="v.id" :value="v.id">
-                {{ v.choferAsignado }} · {{ v.patente }}
+              <option v-for="f in furgones" :key="f.id" :value="f.id">
+                {{ f.etiqueta }}
               </option>
             </select>
           </label>
         </div>
-        <button @click="appStore.state.modoOffline = !appStore.state.modoOffline"
+        <button @click="cambiarConexion"
           :class="['net-pill', { offline: appStore.state.modoOffline }]" :aria-pressed="appStore.state.modoOffline">
           <component :is="appStore.state.modoOffline ? WifiOff : Wifi" :size="14" />
           {{ appStore.state.modoOffline ? 'Offline' : 'Online' }}
         </button>
       </header>
 
-      <div v-if="appStore.state.modoOffline" class="offline-banner">
-        Sin conexión: los cambios se guardan en el teléfono y se sincronizan al reconectar.
+      <div v-if="appStore.state.modoOffline || appStore.state.pendientesSincronizar" class="offline-banner">
+        <template v-if="appStore.state.modoOffline">Sin conexión: los cambios se guardan en el teléfono y se envían al
+          reconectar.</template>
+        <template v-if="appStore.state.pendientesSincronizar">
+          {{ ` ${appStore.state.pendientesSincronizar} acción(es) por enviar a la oficina.` }}
+        </template>
       </div>
 
       <!-- ===================== SIN RUTA ===================== -->
@@ -67,7 +71,7 @@
         </section>
 
         <div class="sticky-cta">
-          <button @click="iniciar" class="btn btn-primary btn-xl">
+          <button @click="iniciar" class="btn btn-primary btn-xl" :disabled="enviando">
             <Play :size="18" /> Carga lista · iniciar ruta
           </button>
         </div>
@@ -143,7 +147,7 @@
 
           <p v-if="avisoVacios" class="note note-warn"><PackageOpen :size="16" /> <span>{{ avisoVacios }}</span></p>
 
-          <button @click="cerrarParada(siguiente)" class="btn btn-success btn-xl" :disabled="!paradaLista">
+          <button @click="cerrarParada(siguiente)" class="btn btn-success btn-xl" :disabled="!paradaLista || enviando">
             <Check :size="20" /> {{ textoCierre }}
           </button>
           <button @click="abrirNovedad(siguiente)" class="link-btn">
@@ -215,7 +219,7 @@
             </div>
             <div class="sheet-actions">
               <button @click="confirmarCierre = false" class="btn btn-secondary">Volver</button>
-              <button @click="cerrarRuta" class="btn btn-primary">Confirmar descarga</button>
+              <button @click="cerrarRuta" class="btn btn-primary" :disabled="enviando">Confirmar descarga</button>
             </div>
           </div>
         </div>
@@ -264,7 +268,7 @@
 
             <div class="sheet-actions">
               <button @click="cerrarNovedad" class="btn btn-secondary">Cancelar</button>
-              <button @click="enviarNovedad" class="btn btn-primary" :disabled="!tipoNovedad">Registrar</button>
+              <button @click="enviarNovedad" class="btn btn-primary" :disabled="!tipoNovedad || enviando">Registrar</button>
             </div>
           </div>
         </div>
@@ -296,7 +300,19 @@ async function salir() {
 }
 import type { Pedido } from '../../types';
 
-// Cada chofer usa la app con su furgón: se elige una vez y el teléfono lo recuerda (o llega por ?furgon=veh-2)
+// Furgones con ruta para este chofer: hoy o una ruta que quedó abierta (el administrador ve todos)
+const furgones = computed(() => {
+  const hoy = hoyISO();
+  const propios = appStore.state.turnos
+    .filter(t => t.vehiculoId && (t.fecha === hoy || t.estado === 'en_ruta'))
+    .map(t => ({ id: t.vehiculoId, etiqueta: `${t.choferNombre} · ${t.patente ?? 'furgón'}` }));
+  const otros = appStore.state.vehiculos
+    .filter(v => v.activo && !propios.some(f => f.id === v.id))
+    .map(v => ({ id: v.id, etiqueta: `${v.choferAsignado} · ${v.patente}` }));
+  return [...propios, ...otros];
+});
+
+// Cada chofer usa la app con su furgón: se elige una vez y el teléfono lo recuerda (o llega por ?furgon=2)
 const CLAVE_FURGON = 'chofer_furgon';
 const route = useRoute();
 function furgonInicial() {
@@ -304,14 +320,32 @@ function furgonInicial() {
   let guardado: string | null = null;
   try { guardado = localStorage.getItem(CLAVE_FURGON); } catch { /* sin almacenamiento */ }
   const candidato = desdeUrl ?? guardado;
-  return appStore.state.vehiculos.some(v => v.id === candidato) ? candidato! : appStore.state.vehiculos[0].id;
+  return furgones.value.some(f => f.id === candidato) ? candidato! : furgones.value[0]?.id ?? '';
 }
 const vehiculoId = ref(furgonInicial());
 watch(vehiculoId, id => {
   try { localStorage.setItem(CLAVE_FURGON, id); } catch { /* sin almacenamiento */ }
 });
+// Si la oficina asigna un furgón después de abrir la app, se toma el primero disponible
+watch(furgones, lista => {
+  if (!lista.some(f => f.id === vehiculoId.value) && lista.length) vehiculoId.value = lista[0].id;
+});
 
-const turno = computed(() => appStore.turnoDe(vehiculoId.value, hoyISO()));
+const turno = computed(() =>
+  appStore.state.turnos.find(t => t.vehiculoId === vehiculoId.value && t.estado === 'en_ruta') ??
+  appStore.turnoDe(vehiculoId.value, hoyISO()));
+
+async function cambiarConexion() {
+  try {
+    await appStore.cambiarModoOffline(!appStore.state.modoOffline);
+    if (!appStore.state.modoOffline) notificar('Conectado: la oficina ya ve tus cambios.', 'exito', 2800);
+  } catch (err) {
+    notificar((err as Error).message, 'error', 6000);
+  }
+}
+
+// Mensaje según si la acción llegó al servidor o quedó guardada en el teléfono
+const enviado = (texto: string) => appStore.state.pendientesSincronizar ? `${texto} Se enviará al reconectar.` : texto;
 const paradas = computed(() => (turno.value ? appStore.pedidosDeTurno(turno.value) : []));
 
 // La app guía al chofer en 3 pasos: cargar en bodega, entregar, volver y cerrar
@@ -438,35 +472,58 @@ function resultado(p: Pedido) {
   return `Entregado · ${p.cantidadBidones} bidón(es)`;
 }
 
-function iniciar() {
-  if (!turno.value) return;
+const enviando = ref(false);
+
+// Envía una acción y avisa el resultado; si el servidor la rechaza, se muestra el motivo
+async function accion(fn: () => Promise<unknown>, exito: string, duracion = 2800) {
+  if (enviando.value) return false;
+  enviando.value = true;
   try {
-    appStore.iniciarRuta(turno.value.id);
-    notificar('Ruta iniciada. La oficina ya ve tu avance.', 'exito', 2800);
+    await fn();
+    notificar(enviado(exito), 'exito', duracion);
+    return true;
   } catch (err) {
-    notificar((err as Error).message, 'error', 5000);
+    notificar((err as Error).message, 'error', 6000);
+    return false;
+  } finally {
+    enviando.value = false;
   }
+}
+
+function iniciar() {
+  const t = turno.value;
+  if (t) void accion(() => appStore.iniciarRuta(t.id), 'Ruta iniciada. La oficina ya ve tu avance.');
 }
 
 function cerrarParada(p: Pedido) {
   if (!paradaLista.value) return;
   const recibidos = vaciosRecibidos.value;
   if (esRetiro(p)) {
-    appStore.confirmarEntregaChofer(p.id, recibidos);
-    notificar(`Retiro en ${p.clienteNombre}: ${recibidos} envase(s) recogido(s).`, 'exito', 2800);
+    void accion(() => appStore.confirmarEntregaChofer(p.id, recibidos), `Retiro en ${p.clienteNombre}: ${recibidos} envase(s) recogido(s).`);
     return;
   }
-  appStore.confirmarVisitaChofer(p.id, recibidos);
-  notificar(`${p.clienteNombre}: entregaste ${p.cantidadBidones} y recibiste ${recibidos} vacío(s).`, 'exito', 2800);
+  void accion(() => appStore.confirmarVisitaChofer(p.id, recibidos),
+    `${p.clienteNombre}: entregaste ${p.cantidadBidones} y recibiste ${recibidos} vacío(s).`);
 }
 
 const confirmarCierre = ref(false);
 
-function cerrarRuta() {
-  if (!turno.value) return;
-  const r = appStore.liquidarRetornoFurgonCentral(turno.value.id, 'chofer');
+async function cerrarRuta() {
+  const t = turno.value;
+  if (!t) return;
   confirmarCierre.value = false;
-  notificar(`Ruta cerrada: ${r.vaciosRecolectados} vacíos y ${r.llenosNoEntregados} llenos descargados.`, 'exito', 4000);
+  if (enviando.value) return;
+  enviando.value = true;
+  try {
+    const r = await appStore.liquidarRetornoFurgonCentral(t.id);
+    notificar(r.pendiente
+      ? enviado('Cierre de ruta guardado.')
+      : `Ruta cerrada: ${r.vaciosRecolectados} vacíos y ${r.llenosNoEntregados} llenos descargados.`, 'exito', 4000);
+  } catch (err) {
+    notificar((err as Error).message, 'error', 6000);
+  } finally {
+    enviando.value = false;
+  }
 }
 
 // Hoja de novedades
@@ -492,7 +549,7 @@ function cerrarNovedad() {
   novedadPedido.value = null;
 }
 
-function enviarNovedad() {
+async function enviarNovedad() {
   const p = novedadPedido.value;
   if (!p || !tipoNovedad.value) return;
 
@@ -507,17 +564,23 @@ function enviarNovedad() {
     roto: `${cantidadNovedad.value} botellón(es) fisurado(s) en el traslado. Entrega parcial aceptada.`
   };
 
+  const tipo = tipoNovedad.value;
+  if (enviando.value) return;
+  enviando.value = true;
   try {
-    appStore.reportarIncidenciaChofer(p.id, tipoNovedad.value, detalles[tipoNovedad.value], {
+    await appStore.reportarIncidenciaChofer(p.id, tipo, detalles[tipo], {
       cantidad: cantidadNovedad.value,
       aceptacionCliente: aceptacionCliente.value
     });
-    notificar(tipoNovedad.value === 'ausente'
+    notificar(enviado(tipo === 'ausente'
       ? 'Ausencia informada a la oficina.'
-      : 'Novedad registrada e informada a la oficina.', 'info', 2800);
+      : 'Novedad registrada e informada a la oficina.'), 'info', 2800);
     cerrarNovedad();
   } catch (err) {
     errorAceptacion.value = (err as Error).message;
+    notificar((err as Error).message, 'error', 6000);
+  } finally {
+    enviando.value = false;
   }
 }
 </script>

@@ -68,16 +68,24 @@
             </td>
             <td data-label="Acción">
               <div class="action-buttons">
+                <button v-if="p.requiereAutorizacion && esAdministrativo && p.estado !== 'cancelado' && p.estado !== 'entregado'"
+                  @click="abrirAutorizacion(p)" class="btn btn-secondary btn-sm"
+                  title="Cliente con envases no retornados: coordina por WhatsApp y decide">
+                  Autorizar
+                </button>
+                <span v-else-if="p.requiereAutorizacion && p.estado !== 'cancelado' && p.estado !== 'entregado'"
+                  class="badge badge-alert" title="Lo autoriza el administrativo">Requiere autorización</span>
                 <template v-if="p.estado === 'pendiente_pago'">
                   <button v-if="p.medioPago === 'webpay'" @click="Webpay(p)" class="btn btn-secondary btn-sm"
-                    title="Simular confirmación de pago Webpay">
+                    title="Webpay real pendiente de Transbank: registra una simulación identificada" :disabled="ocupado">
                     Confirmar Webpay
                   </button>
                   <button v-else @click="abrirModalTransferencia(p)" class="btn btn-secondary btn-sm">
                     Validar transf.
                   </button>
                 </template>
-                <button v-if="p.estado === 'pagado'" @click="asignarDespacho(p)" class="btn btn-primary btn-sm">
+                <button v-if="p.estado === 'pagado' && !p.requiereAutorizacion" @click="asignarDespacho(p)"
+                  class="btn btn-primary btn-sm" :disabled="ocupado">
                   Asignar hoy
                 </button>
                 <button @click="pedidoDetalle = p" class="btn btn-secondary btn-sm" aria-label="Ver detalle">
@@ -94,6 +102,34 @@
     </div>
 
     <NuevoPedidoModal v-if="mostrarModalPedido" @cerrar="mostrarModalPedido = false" />
+
+    <!-- Autorizar pedido de un cliente con envases no retornados (solo administrativo) -->
+    <div v-if="modalAutorizacion" class="modal-overlay" @click.self="modalAutorizacion = null">
+      <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="titulo-autorizar">
+        <div class="modal-header">
+          <h2 id="titulo-autorizar">Autorizar pedido {{ modalAutorizacion.codigo }}</h2>
+          <button @click="modalAutorizacion = null" class="btn-close" aria-label="Cerrar">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-4">{{ modalAutorizacion.clienteNombre }} tiene envases no retornados. Coordina por WhatsApp y
+            registra la decisión. Ninguna autorización suma stock.</p>
+          <p v-if="notaCliente(modalAutorizacion)" class="text-sm text-muted mb-4 nota-cliente">{{ notaCliente(modalAutorizacion) }}</p>
+          <div class="form-group">
+            <label for="motivo-autorizacion">Motivo o acuerdo</label>
+            <input id="motivo-autorizacion" type="text" v-model="motivoAutorizacion" maxlength="300"
+              placeholder="Ej: devolverá los envases en esta entrega" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button @click="autorizar('SIN_RETORNO')" class="btn btn-secondary" :disabled="ocupado || !motivoAutorizacion.trim()">
+            Autorizar sin retorno
+          </button>
+          <button @click="autorizar('CON_RETORNO')" class="btn btn-primary" :disabled="ocupado || !motivoAutorizacion.trim()">
+            Autorizar con retorno
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Validar transferencia bancaria manual -->
     <div v-if="modalTransferenciaPedido" class="modal-overlay" @click.self="modalTransferenciaPedido = null">
@@ -118,7 +154,9 @@
         </div>
         <div class="modal-footer">
           <button @click="modalTransferenciaPedido = null" class="btn btn-secondary">Cancelar</button>
-          <button @click="confirmarTransferencia" class="btn btn-success">Aprobar y liberar a despacho</button>
+          <button @click="confirmarTransferencia" class="btn btn-success" :disabled="ocupado || !comprobanteNombre.trim()">
+            Aprobar y liberar a despacho
+          </button>
         </div>
       </div>
     </div>
@@ -150,9 +188,8 @@
           <div class="detail-row" v-if="pedidoDetalle.pedidoOrigenCodigo">
             <strong>Saldo de:</strong> {{ pedidoDetalle.pedidoOrigenCodigo }} (pago original)
           </div>
-          <div class="detail-row" v-if="pedidoDetalle.linkWebpay">
-            <strong>Link Webpay:</strong> <a :href="pedidoDetalle.linkWebpay" target="_blank" rel="noopener">{{
-              pedidoDetalle.linkWebpay }}</a>
+          <div class="detail-row" v-if="pedidoDetalle.autorizacion && pedidoDetalle.autorizacion !== 'LIBRE'">
+            <strong>Autorización:</strong> {{ textoAutorizacion(pedidoDetalle.autorizacion) }}
           </div>
           <div class="detail-row" v-if="pedidoDetalle.incidencia">
             <strong>Incidencia:</strong>
@@ -175,6 +212,7 @@ import { Eye, Plus, Search } from 'lucide-vue-next';
 import NuevoPedidoModal from '../../components/NuevoPedidoModal.vue';
 import { appStore } from '../../store/useAppStore';
 import { notificar } from '../../store/useToast';
+import { session } from '../../store/useSession';
 import { formatCLP, formatEstado, formatEstadoLabel, getBadgeClass } from '../../utils/formato';
 import type { Pedido } from '../../types';
 
@@ -212,9 +250,28 @@ const pedidosFiltrados = computed(() => {
   });
 });
 
+const esAdministrativo = computed(() => session.user?.rol === 'administrativo');
+const ocupado = ref(false);
+
+// Ejecuta una acción del servidor y muestra su resultado o el motivo del rechazo
+async function ejecutar(accion: () => Promise<unknown>, exito: string) {
+  if (ocupado.value) return false;
+  ocupado.value = true;
+  try {
+    await accion();
+    notificar(exito, 'exito');
+    return true;
+  } catch (err) {
+    notificar((err as Error).message, 'error', 6000);
+    return false;
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+// Webpay real pendiente de Transbank (bug 95): queda registrado como simulación
 function Webpay(p: Pedido) {
-  appStore.simularPagoWebpay(p.id);
-  notificar(`Pago Webpay de ${p.codigo} confirmado. Listo para asignar a ruta.`, 'exito');
+  void ejecutar(() => appStore.simularPagoWebpay(p.id), `Pago Webpay (simulación) de ${p.codigo} registrado. Listo para planificar.`);
 }
 
 function abrirModalTransferencia(p: Pedido) {
@@ -222,24 +279,55 @@ function abrirModalTransferencia(p: Pedido) {
   comprobanteNombre.value = `comprobante_${p.codigo.toLowerCase()}.pdf`;
 }
 
-function confirmarTransferencia() {
-  if (!modalTransferenciaPedido.value) return;
-  appStore.validarTransferenciaManual(modalTransferenciaPedido.value.id, comprobanteNombre.value);
-  notificar(`Transferencia de ${modalTransferenciaPedido.value.codigo} aprobada.`, 'exito');
-  modalTransferenciaPedido.value = null;
+async function confirmarTransferencia() {
+  const p = modalTransferenciaPedido.value;
+  if (!p) return;
+  const ok = await ejecutar(() => appStore.validarTransferenciaManual(p.id, comprobanteNombre.value.trim()),
+    `Transferencia de ${p.codigo} aprobada.`);
+  if (ok) modalTransferenciaPedido.value = null;
 }
 
-function asignarDespacho(p: Pedido) {
+async function asignarDespacho(p: Pedido) {
+  if (ocupado.value) return;
+  ocupado.value = true;
   try {
-    const v = appStore.asignarPedidoADespacho(p.id);
+    const v = await appStore.asignarPedidoADespacho(p.id);
     notificar(`${p.codigo} planificado para hoy en ${v.modelo.replace(/\s*\(.*\)$/, '')}.`, 'exito');
   } catch (err) {
     notificar((err as Error).message, 'error', 6000);
+  } finally {
+    ocupado.value = false;
   }
 }
+
+// Cliente con envases no retornados: el administrativo autoriza con o sin retorno
+const modalAutorizacion = ref<Pedido | null>(null);
+const motivoAutorizacion = ref('');
+function abrirAutorizacion(p: Pedido) {
+  modalAutorizacion.value = p;
+  motivoAutorizacion.value = '';
+}
+const notaCliente = (p: Pedido) => appStore.state.clientes.find(c => c.id === p.clienteId)?.notaNoRetornados ?? '';
+async function autorizar(decision: 'CON_RETORNO' | 'SIN_RETORNO') {
+  const p = modalAutorizacion.value;
+  if (!p) return;
+  const ok = await ejecutar(() => appStore.autorizarPedido(p.id, decision, motivoAutorizacion.value.trim()),
+    `${p.codigo} autorizado ${decision === 'SIN_RETORNO' ? 'sin retorno' : 'con retorno'}.`);
+  if (ok) modalAutorizacion.value = null;
+}
+const TEXTO_AUTORIZACION: Record<string, string> = {
+  PENDIENTE: 'pendiente del administrativo',
+  CON_RETORNO: 'autorizado con retorno',
+  SIN_RETORNO: 'autorizado sin retorno'
+};
+const textoAutorizacion = (a: string) => TEXTO_AUTORIZACION[a] ?? a;
 </script>
 
 <style scoped>
+.nota-cliente {
+  white-space: pre-line;
+}
+
 .filter-tags {
   display: flex;
   gap: 6px;

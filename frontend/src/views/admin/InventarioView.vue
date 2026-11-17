@@ -4,11 +4,8 @@
       <p class="text-sm text-muted">Los envases fuera de bodega no se cuentan como disponibles. Los rotos siguen en el total
         físico hasta su baja.</p>
       <div class="toolbar-actions">
-        <button @click="appStore.sincronizarInventario()" class="btn btn-secondary btn-sm">
-          <RefreshCw :size="14" /> Sincronizar
-        </button>
-        <button @click="confirmarReset = true" class="btn btn-secondary btn-sm">
-          <RotateCcw :size="14" /> Restablecer demo
+        <button @click="actualizar" class="btn btn-secondary btn-sm">
+          <RefreshCw :size="14" /> Actualizar
         </button>
       </div>
     </div>
@@ -21,8 +18,8 @@
             <component :is="auditoria.ok ? ShieldCheck : ShieldAlert" :size="18" />
             {{ auditoria.ok ? 'Cuadratura correcta' : 'Descuadre detectado' }}
           </h2>
-          <p class="card-sub">Se verifica en cada acción, incluidas las que registra el chofer desde su app. Última
-            actualización: {{ horaActualizacion }}.</p>
+          <p class="card-sub">Se verifica con el libro de movimientos del servidor, incluidas las acciones que registra
+            el chofer desde su app. Última lectura: {{ horaActualizacion }}</p>
         </div>
       </div>
       <ul class="audit-list">
@@ -32,24 +29,6 @@
           <span>{{ c.detalle }}</span>
         </li>
       </ul>
-    </section>
-
-    <!-- Pedidos de prueba -->
-    <section class="card demo-card">
-      <div>
-        <h2 class="card-title">Pedidos de prueba</h2>
-        <p class="card-sub">Crea compras ficticias con las mismas acciones de la app: ~25% queda por cobrar, el resto se
-          paga y queda por planificar: la asignación a furgón y día la haces tú en Planificación.</p>
-      </div>
-      <div class="demo-actions">
-        <select v-model.number="cantidadDemo" aria-label="Cantidad de pedidos de prueba">
-          <option :value="5">5 pedidos</option>
-          <option :value="10">10 pedidos</option>
-          <option :value="20">20 pedidos</option>
-          <option :value="40">40 pedidos</option>
-        </select>
-        <button @click="generarDemo" class="btn btn-primary btn-sm"><Sparkles :size="14" /> Generar</button>
-      </div>
     </section>
 
     <!-- Disponibles vs total físico (PBI 72, criterio 4) -->
@@ -105,9 +84,10 @@
       <div class="sync-ops">
         <span class="text-sm text-muted">Bajas definitivas acumuladas: <strong>{{ inv.bajasDefinitivas60d }}</strong>
           (fuera del total)</span>
-        <div class="toolbar-actions">
-          <button v-if="inv.vaciosCentral >= 10" @click="appStore.sanitizarYRecargar(10)" class="btn btn-secondary btn-sm">
-            Sanitizar y rellenar 10 vacíos
+        <!-- Embotellación y baja física: exclusivas del administrador -->
+        <div v-if="esAdministrador" class="toolbar-actions">
+          <button v-if="inv.vaciosCentral > 0" @click="rellenar" class="btn btn-secondary btn-sm">
+            Sanitizar y rellenar {{ Math.min(10, inv.vaciosCentral) }} vacíos
           </button>
           <button v-if="inv.rotosBodega > 0" @click="confirmarBajaRoto = true" class="btn btn-danger-outline btn-sm">
             Autorizar baja de roto ({{ inv.rotosBodega }})
@@ -134,12 +114,15 @@
           </thead>
           <tbody>
             <tr v-for="r in roturas" :key="r.id">
-              <td class="font-mono">{{ formatFechaCorta(r.fecha) }}</td>
+              <td class="font-mono">{{ r.fecha ? formatFechaCorta(r.fecha) : '—' }}</td>
               <td>{{ r.codigoPedido }}<span v-if="r.pedidoId" class="text-xs text-muted"> · {{ r.clienteNombre }}</span></td>
               <td class="font-mono">{{ r.cantidad }}</td>
               <td class="text-sm">{{ r.detalle }}</td>
               <td>
-                <span :class="['badge', r.estado === 'pendiente_baja' ? 'badge-danger' : 'badge-neutral']">
+                <button v-if="r.estado === 'por_clasificar'" @click="clasificar(r.reporteId)" class="btn btn-secondary btn-sm">
+                  Clasificar a rotos
+                </button>
+                <span v-else :class="['badge', r.estado === 'pendiente_baja' ? 'badge-danger' : 'badge-neutral']">
                   {{ r.estado === 'pendiente_baja' ? 'Pendiente de baja' : 'Baja autorizada' }}
                 </span>
               </td>
@@ -191,7 +174,7 @@
                   {{ retiroDe(r.clienteId)!.codigo }} · {{ estadoRetiro(r.clienteId) }}
                 </span>
                 <button v-else @click="programarRetiro(r.clienteId)" class="btn btn-secondary btn-sm">Programar retiro</button>
-                <button v-if="r.dias >= 60" @click="registroBaja = r" class="btn btn-danger-outline btn-sm">Dar de baja</button>
+                <button v-if="r.dias >= 60 && esAdministrador" @click="registroBaja = r" class="btn btn-danger-outline btn-sm">Dar de baja</button>
               </td>
             </tr>
           </tbody>
@@ -219,16 +202,16 @@
       <div class="card-head">
         <div>
           <h2 class="card-title">Cuenta para transferencias</h2>
-          <p class="card-sub">Todas las transferencias se abonan a la cuenta de la empresa.</p>
+          <p class="card-sub">Las transferencias se abonan a la cuenta activa registrada en el servidor. Los datos
+            reales de la cuenta dependen del PBI 63.</p>
         </div>
       </div>
       <div class="list-row is-active-account">
         <div class="row-main">
           <strong>{{ appStore.cuentaActiva.value.banco }}</strong>
-          <span class="text-sm font-mono text-muted">{{ appStore.cuentaActiva.value.tipoCuenta }} · {{
-            appStore.cuentaActiva.value.numeroCuenta }} · RUT {{ appStore.cuentaActiva.value.rut }}</span>
+          <span class="text-sm font-mono text-muted">N° {{ appStore.cuentaActiva.value.numeroCuenta }}</span>
         </div>
-        <span class="text-sm text-muted">{{ appStore.cuentaActiva.value.titular }}</span>
+        <span class="text-sm text-muted">{{ appStore.cuentaActiva.value.comprobantesProcesados }} comprobante(s) validados</span>
       </div>
     </section>
 
@@ -259,26 +242,16 @@
       </div>
     </div>
 
-    <div v-if="confirmarReset" class="modal-overlay" @click.self="confirmarReset = false">
-      <div class="modal-content modal-sm" role="alertdialog" aria-modal="true">
-        <div class="modal-header"><h3>Restablecer datos demo</h3></div>
-        <div class="modal-body">Se perderán los pedidos y movimientos registrados en este navegador.</div>
-        <div class="modal-footer">
-          <button @click="confirmarReset = false" class="btn btn-secondary">Cancelar</button>
-          <button @click="reset" class="btn btn-primary">Restablecer</button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { CircleCheck, CircleX, RefreshCw, RotateCcw, ShieldAlert, ShieldCheck, Sparkles } from 'lucide-vue-next';
-import { generarPedidosDemo } from '../../store/demo';
+import { CircleCheck, CircleX, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-vue-next';
 import CargaFurgonBar from '../../components/CargaFurgonBar.vue';
 import { appStore } from '../../store/useAppStore';
 import { notificar } from '../../store/useToast';
+import { session } from '../../store/useSession';
 import { formatFechaCorta } from '../../utils/formato';
 import type { RegistroEnvase } from '../../types';
 
@@ -301,7 +274,30 @@ const horaActualizacion = computed(() => {
   return t ? new Date(t).toLocaleTimeString('es-CL') : '—';
 });
 
-const cantidadDemo = ref(20);
+const esAdministrador = computed(() => session.user?.rol === 'administrador');
+
+// Ejecuta una acción del servidor y muestra el resultado o el motivo del rechazo
+async function ejecutar(accion: () => Promise<unknown>, exito: string) {
+  try {
+    await accion();
+    notificar(exito, 'exito');
+  } catch (err) {
+    notificar((err as Error).message, 'error', 6000);
+  }
+}
+
+function actualizar() {
+  void ejecutar(() => appStore.recargar(), 'Inventario actualizado.');
+}
+
+function rellenar() {
+  const n = Math.min(10, inv.value.vaciosCentral);
+  void ejecutar(() => appStore.sanitizarYRecargar(n), `${n} vacíos sanitizados pasan a llenos.`);
+}
+
+function clasificar(reporteId?: string) {
+  if (reporteId) void ejecutar(() => appStore.clasificarRotura(reporteId), 'Rotura clasificada a la bodega de rotos.');
+}
 
 // Retiros de envases pendientes (parada solo de retiro, sin pedido nuevo)
 const retiroDe = (clienteId: string) => appStore.retiroAbierto(clienteId);
@@ -312,51 +308,36 @@ function estadoRetiro(clienteId: string) {
   const r = retiroDe(clienteId);
   return r ? ETIQUETA_RETIRO[r.estado] ?? r.estado : '';
 }
-function programarRetiro(clienteId: string) {
+async function programarRetiro(clienteId: string) {
   try {
-    const codigo = appStore.programarRetiro(clienteId);
+    const codigo = await appStore.programarRetiro(clienteId);
     notificar(`${codigo} creado: queda por planificar en el calendario.`, 'exito', 4500);
   } catch (err) {
     notificar((err as Error).message, 'error');
   }
 }
-
-function generarDemo() {
-  const r = generarPedidosDemo(cantidadDemo.value);
-  notificar(`${r.creados} pedidos creados: ${r.pagados} pagados quedan por planificar y ${r.creados - r.pagados} por cobrar.`, 'exito', 6000);
-}
 const totalFisicoBodega = computed(() => inv.value.llenosCentral + inv.value.vaciosCentral + inv.value.rotosBodega);
-const historial = computed(() => appStore.state.registrosEnvases.filter(r => r.estado !== 'pendiente').slice().reverse());
+// El servidor entrega el historial del más reciente al más antiguo
+const historial = computed(() => appStore.state.registrosEnvases.filter(r => r.estado !== 'pendiente'));
 
-// Registros de rotura: primero los pendientes de baja, luego el historial
+// Registros de rotura: primero los por clasificar, luego los pendientes de baja y al final el historial
+const PRIORIDAD_ROTURA = { por_clasificar: 0, pendiente_baja: 1, baja_definitiva: 2 } as const;
 const roturas = computed(() => [...appStore.state.roturasBodega]
-  .sort((a, b) => Number(b.estado === 'pendiente_baja') - Number(a.estado === 'pendiente_baja')));
+  .sort((a, b) => PRIORIDAD_ROTURA[a.estado] - PRIORIDAD_ROTURA[b.estado]));
 
 const confirmarBajaRoto = ref(false);
-const confirmarReset = ref(false);
 const registroBaja = ref<RegistroEnvase | null>(null);
 
-function bajaRoto() {
-  appStore.autorizarBajaRotoAdmin(1);
+async function bajaRoto() {
   confirmarBajaRoto.value = false;
-  notificar('Baja física autorizada.', 'exito');
+  await ejecutar(() => appStore.autorizarBajaRotoAdmin(1), 'Baja física autorizada.');
 }
 
-function bajaNoRetornado() {
-  if (!registroBaja.value) return;
-  try {
-    appStore.darDeBajaNoRetornado(registroBaja.value.id);
-    notificar(`Baja registrada para ${registroBaja.value.clienteNombre}.`, 'exito');
-  } catch (err) {
-    notificar((err as Error).message, 'error');
-  }
+async function bajaNoRetornado() {
+  const r = registroBaja.value;
+  if (!r) return;
   registroBaja.value = null;
-}
-
-function reset() {
-  appStore.resetDemoData();
-  confirmarReset.value = false;
-  notificar('Datos demo restablecidos.', 'info');
+  await ejecutar(() => appStore.darDeBajaNoRetornado(r.id), `Baja registrada para ${r.clienteNombre}.`);
 }
 </script>
 
@@ -614,23 +595,6 @@ function reset() {
 
 .audit-list li.fail {
   color: #991b1b;
-}
-
-.demo-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.demo-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.demo-actions select {
-  padding: 8px 12px;
 }
 
 .modal-sm {

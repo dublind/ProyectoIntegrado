@@ -93,8 +93,8 @@ router.beforeEach(async (to) => {
   const user = await cargarSesion();
   if (to.meta.publica) return user && to.name === 'Login' ? inicioPorRol(user) : true;
   if (!user) return { name: 'Login', query: to.fullPath === '/' ? {} : { redirect: to.fullPath } };
-  // Panel y app del chofer comparten el mismo estado en el servidor
-  iniciarSincronizacion();
+  // Panel y app del chofer leen el mismo estado del servidor (primera lectura antes de mostrar la vista)
+  await iniciarSincronizacion(user.username);
   if (!puedeEntrar(to, user)) return inicioPorRol(user);
   return true;
 });

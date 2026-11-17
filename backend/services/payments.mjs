@@ -2,7 +2,7 @@ import { ApiError, fail, permit } from '../shared/errors.mjs';
 import { integer, text, eventKey } from '../shared/validation.mjs';
 import { one, rows } from '../shared/database.mjs';
 import { audit, changeState } from '../shared/audit.mjs';
-import { getOrder, enqueueOrder } from './orders.mjs';
+import { getOrder, enqueueOrder, amountDue, isPaid } from './orders.mjs';
 import { notifyPaymentApproved } from './notifications.mjs';
 
 export async function handlePayments(db, user, method, id, action, body) {
@@ -29,9 +29,9 @@ async function createPayment(db, user, body) {
     fail(existing.id_pedido !== currentOrder.id_pedido, 'Evento ya usado en otro pedido', 409);
     return existing;
   }
+  fail(currentOrder.tipo === 'retiro', 'Un retiro de envases no se cobra', 409);
   fail(
-    amount >
-      Number(currentOrder.cantidad * currentOrder.precio_unitario) - Number(currentOrder.pagado),
+    amount > amountDue(currentOrder) - Number(currentOrder.pagado),
     'Monto supera el saldo pendiente',
     409,
   );
@@ -86,15 +86,10 @@ async function validatePayment(db, user, id, body) {
       }
     }
     const currentOrder = await getOrder(db, payment.id_pedido);
-    if (
-      Number(currentOrder.pagado) >= Number(currentOrder.cantidad * currentOrder.precio_unitario) &&
-      currentOrder.entregados === 0
-    ) {
+    if (isPaid(currentOrder) && currentOrder.entregados === 0) {
       await changeState(db, user, currentOrder.id_pedido, 'Pagado', 'Pago anticipado validado');
     }
-    if (
-      Number(currentOrder.pagado) >= Number(currentOrder.cantidad * currentOrder.precio_unitario)
-    ) {
+    if (isPaid(currentOrder)) {
       await notifyPaymentApproved(db, currentOrder.id_pedido, id);
     }
     await enqueueOrder(db, user, currentOrder.id_pedido);
