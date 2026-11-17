@@ -24,19 +24,32 @@ export async function handleVehicles(db, user, method, id, action, body) {
 
   const capacity = integer(body.capacidad, 'Capacidad', 1, 10000);
   if (id) {
-    const turn = (
-      await rows(db, "SELECT * FROM turno WHERE vehiculo_id=$1 AND estado <> 'finalizado'", [id])
+    // La capacidad no puede quedar bajo lo ya planificado en ningún día abierto de este furgón
+    const used = (
+      await rows(
+        db,
+        `SELECT t.fecha, COALESCE(SUM(pa.cantidad),0)::INT AS n
+         FROM turno t LEFT JOIN parada pa ON pa.turno_id=t.id AND pa.estado <> 'reprogramada'
+         WHERE t.vehiculo_id=$1 AND t.estado <> 'finalizado'
+         GROUP BY t.id, t.fecha ORDER BY n DESC LIMIT 1`,
+        [id],
+      )
     )[0];
-    if (turn) {
-      const used = Number(
-        (
-          await one(db, 'SELECT COALESCE(SUM(cantidad),0) AS n FROM parada WHERE turno_id=$1', [
-            turn.id,
-          ])
-        ).n,
-      );
-      fail(capacity < used, 'Capacidad inferior a la carga asignada', 409);
-    }
+    fail(
+      used && capacity < used.n,
+      `Capacidad inferior a la carga asignada (${used?.n} bidones planificados)`,
+      409,
+    );
+  }
+  let chofer = null;
+  if (body.chofer) {
+    chofer = (
+      await one(
+        db,
+        "SELECT username FROM usuario_local WHERE username=$1 AND rol='chofer' AND activo",
+        [String(body.chofer)],
+      )
+    ).username;
   }
 
   const params = [
@@ -48,14 +61,16 @@ export async function handleVehicles(db, user, method, id, action, body) {
     method === 'POST'
       ? await one(
           db,
-          'INSERT INTO vehiculo(patente,modelo,capacidad) VALUES ($1,$2,$3) RETURNING *',
-          params,
+          `INSERT INTO vehiculo(patente,modelo,capacidad,chofer)
+           VALUES ($1,$2,$3,COALESCE($4,(SELECT username FROM usuario_local WHERE rol='chofer' AND activo ORDER BY id LIMIT 1)))
+           RETURNING *`,
+          [...params, chofer],
         )
       : await one(
           db,
-          'UPDATE vehiculo SET patente=$1,modelo=$2,capacidad=$3 WHERE id=$4 RETURNING *',
-          [...params, id],
+          'UPDATE vehiculo SET patente=$1,modelo=$2,capacidad=$3,chofer=COALESCE($5,chofer) WHERE id=$4 RETURNING *',
+          [...params, id, chofer],
         );
-  await audit(db, user, 'Guardar vehículo', vehicle.id);
+  await audit(db, user, 'Guardar vehículo', vehicle.id, { capacidad: capacity });
   return vehicle;
 }

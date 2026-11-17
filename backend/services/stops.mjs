@@ -1,19 +1,26 @@
-import { fail, permit } from '../shared/errors.mjs';
+import { fail } from '../shared/errors.mjs';
 import { integer, text, eventKey } from '../shared/validation.mjs';
 import { one } from '../shared/database.mjs';
 import { audit, changeState } from '../shared/audit.mjs';
 import { getOrder } from './orders.mjs';
 import { move } from './inventory.mjs';
-import { notifyDelivery, notifyPendingReturn } from './notifications.mjs';
+import { notifyBreakage, notifyDelivery, notifyPendingReturn } from './notifications.mjs';
+import { collectFifo } from './returns.mjs';
+import { cancelRetrievalsWithoutDebt, pendingReturnsOf } from './planning.mjs';
 
 export async function handleStops(db, user, method, id, action, body) {
-  permit(user, 'chofer');
+  // El chofer registra su ruta; el administrador (super usuario) también puede usar la app del chofer
+  fail(!['chofer', 'administrador'].includes(user.rol), 'Sin permiso', 403);
   const stop = await one(
     db,
-    'SELECT pa.*,t.chofer,t.estado AS estado_turno FROM parada pa JOIN turno t ON t.id=pa.turno_id WHERE pa.id=$1',
+    'SELECT pa.*,t.chofer,t.estado AS estado_turno FROM parada pa JOIN turno t ON t.id=pa.turno_id WHERE pa.id=$1 FOR UPDATE OF pa',
     [id],
   );
-  fail(stop.chofer !== user.username, 'Parada asignada a otro chofer', 403);
+  fail(
+    user.rol === 'chofer' && stop.chofer !== user.username,
+    'Parada asignada a otro chofer',
+    403,
+  );
   const key = eventKey(body);
   if (stop.evento === key) {
     return { ok: true };
@@ -35,30 +42,29 @@ export async function handleStops(db, user, method, id, action, body) {
       'Ausente',
       'Coordinar regreso durante el día o mañana',
     );
-    await audit(db, user, 'Cliente ausente', id);
+    await audit(db, user, 'Cliente ausente', id, { pedido: currentOrder.id_pedido });
     await notifyDelivery(db, id, currentOrder.id_pedido, { absent: true });
     return { ok: true };
+  }
+
+  if (currentOrder.tipo === 'retiro') {
+    return deliverRetrieval(db, user, stop, currentOrder, body, key);
   }
 
   const delivered = integer(body.entregados, 'Entregados', 0);
   const broken = integer(body.rotos ?? 0, 'Rotos', 0);
   const empties = integer(body.vacios ?? 0, 'Vacíos', 0);
+  // Vacíos de entregas anteriores que el cliente devuelve en esta visita
+  const previous = integer(body.retiros ?? 0, 'Retiros', 0);
   fail(delivered + broken > stop.cantidad, 'Cantidades superiores a la carga');
   fail(
     delivered < stop.cantidad && !body.aceptacion_parcial,
     'La entrega parcial requiere aceptación del cliente',
   );
 
-  const pending = Number(
-    (
-      await one(
-        db,
-        "SELECT COALESCE(SUM(cantidad),0) AS n FROM retorno_pendiente WHERE cliente_id=$1 AND estado IN ('pendiente','no_retornaron')",
-        [currentOrder.id_cliente],
-      )
-    ).n,
-  );
+  const pending = await pendingReturnsOf(db, currentOrder.id_cliente);
   fail(empties > delivered + pending, 'Retornos superiores a los retiros previstos');
+  fail(previous > pending, 'El cliente no debe tantos envases de entregas anteriores');
 
   if (delivered) {
     await move(db, user, {
@@ -69,6 +75,7 @@ export async function handleStops(db, user, method, id, action, body) {
       destino: 'ENTREGADOS',
       condicionDestino: 'LLENO',
       pedido: currentOrder.id_pedido,
+      turno: stop.turno_id,
       observacion: 'Cantidad efectivamente entregada',
       evento: key + '-entrega',
     });
@@ -83,14 +90,24 @@ export async function handleStops(db, user, method, id, action, body) {
       destino: 'TRANSITO',
       condicionDestino: 'VACIO',
       pedido: currentOrder.id_pedido,
+      turno: stop.turno_id,
       observacion: 'Retiro físico confirmado por chofer',
       evento: key + '-vacios',
     });
   }
 
-  // Los retiros antiguos son explícitos mediante /returns/:id/collect. El formulario
-  // de entrega registra los vacíos del pedido actual; no resuelve acuerdos ficticios.
+  // Los vacíos del pedido actual van en "vacios"; los de entregas anteriores, en "retiros"
   fail(empties > delivered, 'Marca los retiros anteriores individualmente antes de confirmar');
+
+  // Se resuelven antes de registrar lo que quede pendiente de esta entrega (los más antiguos primero)
+  if (previous) {
+    await collectFifo(db, user, {
+      clientId: currentOrder.id_cliente,
+      cantidad: previous,
+      turnId: stop.turno_id,
+      evento: key + '-anteriores',
+    });
+  }
 
   if (delivered > empties) {
     const pendingReturn = await one(
@@ -105,18 +122,23 @@ export async function handleStops(db, user, method, id, action, body) {
       ],
     );
     await notifyPendingReturn(db, pendingReturn);
+  } else if (previous) {
+    await cancelRetrievalsWithoutDebt(db, user, currentOrder.id_cliente);
   }
 
   if (broken) {
-    await db.query(
-      'INSERT INTO reporte_rotura(pedido_id,cantidad,detalle,chofer) VALUES ($1,$2,$3,$4)',
+    const report = await one(
+      db,
+      'INSERT INTO reporte_rotura(pedido_id,cantidad,detalle,chofer,parada_id) VALUES ($1,$2,$3,$4,$5) RETURNING *',
       [
         currentOrder.id_pedido,
         broken,
         text(body.detalle ?? 'Rotura informada al administrativo', 'Detalle', 300),
         user.username,
+        id,
       ],
     );
+    await notifyBreakage(db, report);
   }
 
   await db.query('UPDATE pedido SET entregados=entregados+$1 WHERE id_pedido=$2', [
@@ -128,7 +150,7 @@ export async function handleStops(db, user, method, id, action, body) {
     [
       delivered,
       broken,
-      empties,
+      empties + previous,
       delivered === stop.cantidad ? 'entregada' : 'parcial',
       !!body.aceptacion_parcial,
       key,
@@ -145,9 +167,45 @@ export async function handleStops(db, user, method, id, action, body) {
       ? 'Entrega confirmada'
       : 'Parcial aceptada; saldo pagado en próximo turno',
   );
-  await audit(db, user, 'Registrar entrega', id, { delivered, broken, empties });
+  await audit(db, user, 'Registrar entrega', id, {
+    pedido: currentOrder.id_pedido,
+    delivered,
+    broken,
+    empties,
+    previous,
+  });
   if (delivered) {
     await notifyDelivery(db, id, currentOrder.id_pedido, { delivered });
   }
+  return { ok: true };
+}
+
+// Parada solo de retiro: el chofer recoge los envases pendientes del cliente (los más antiguos primero)
+async function deliverRetrieval(db, user, stop, order, body, key) {
+  const empties = integer(body.vacios ?? 0, 'Vacíos', 0);
+  const pending = await pendingReturnsOf(db, order.id_cliente);
+  fail(empties > pending, 'El cliente no debe tantos envases');
+  if (empties) {
+    await collectFifo(db, user, {
+      clientId: order.id_cliente,
+      cantidad: empties,
+      turnId: stop.turno_id,
+      evento: key,
+    });
+  }
+  await db.query("UPDATE parada SET vacios=$1,estado='entregada',evento=$2 WHERE id=$3", [
+    empties,
+    key,
+    stop.id,
+  ]);
+  await changeState(
+    db,
+    user,
+    order.id_pedido,
+    'Entregado',
+    empties ? `Retiro de ${empties} envase(s)` : 'Retiro sin envases para recoger',
+  );
+  await cancelRetrievalsWithoutDebt(db, user, order.id_cliente, order.id_pedido);
+  await audit(db, user, 'Registrar retiro', stop.id, { pedido: order.id_pedido, empties });
   return { ok: true };
 }

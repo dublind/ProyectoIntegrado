@@ -27,6 +27,7 @@ export async function move(
     destino,
     condicionDestino,
     pedido = null,
+    turno = null,
     observacion,
     evento,
   },
@@ -46,8 +47,8 @@ export async function move(
     fail((await getBalance(db, origen, condicionOrigen)) < cantidad, 'Stock insuficiente', 409);
   }
   await db.query(
-    `INSERT INTO movimiento_inventario(codigo_tipo_movimiento,id_producto,cantidad,id_ubicacion_origen,condicion_origen,id_ubicacion_destino,condicion_destino,id_pedido,responsable,observacion,evento)
-  VALUES ($1,(SELECT id_producto FROM producto WHERE codigo='BIDON'),$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    `INSERT INTO movimiento_inventario(codigo_tipo_movimiento,id_producto,cantidad,id_ubicacion_origen,condicion_origen,id_ubicacion_destino,condicion_destino,id_pedido,responsable,observacion,evento,turno_id)
+  VALUES ($1,(SELECT id_producto FROM producto WHERE codigo='BIDON'),$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
     [
       tipo,
       cantidad,
@@ -59,6 +60,7 @@ export async function move(
       user.username,
       observacion,
       evento ?? randomUUID(),
+      turno,
     ],
   );
 }
@@ -70,6 +72,16 @@ export async function handleInventory(db, user, method, id, action, body) {
     if (report.clasificado) {
       return { ok: true };
     }
+    // Turno cuyo furgón trae el botellón roto (la parada del reporte o la ruta abierta del pedido)
+    const turn = (
+      await rows(
+        db,
+        `SELECT pa.turno_id FROM parada pa JOIN turno t ON t.id=pa.turno_id
+         WHERE ($1::INT IS NOT NULL AND pa.id=$1) OR ($1::INT IS NULL AND pa.pedido_id=$2 AND t.estado='en_ruta')
+         ORDER BY pa.id DESC LIMIT 1`,
+        [report.parada_id, report.pedido_id],
+      )
+    )[0];
     await move(db, user, {
       tipo: 'ROTURA',
       cantidad: report.cantidad,
@@ -78,10 +90,14 @@ export async function handleInventory(db, user, method, id, action, body) {
       destino: 'ROTOS',
       condicionDestino: 'ROTO',
       pedido: report.pedido_id,
+      turno: turn?.turno_id ?? null,
       observacion: 'Clasificación administrativa de reporte ' + id,
       evento: 'clasificar-' + id,
     });
-    await db.query('UPDATE reporte_rotura SET clasificado=TRUE WHERE id=$1', [id]);
+    await db.query(
+      'UPDATE reporte_rotura SET clasificado=TRUE,clasificado_por=$2,clasificado_en=now() WHERE id=$1',
+      [id, user.username],
+    );
     await audit(db, user, 'Clasificar roto', id);
     return { ok: true };
   }

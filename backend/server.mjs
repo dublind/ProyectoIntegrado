@@ -83,9 +83,7 @@ export function createServer(db, options = {}) {
       let raw = '';
       for await (const chunk of req) {
         raw += chunk;
-        // El estado compartido del panel es más grande que una solicitud normal
-        const limit = url.pathname === '/api/shared-state' ? 4 * 1024 * 1024 : 65536;
-        fail(raw.length > limit, 'Solicitud demasiado grande', 413);
+        fail(raw.length > 65536, 'Solicitud demasiado grande', 413);
       }
       let body = {};
       if (raw) {

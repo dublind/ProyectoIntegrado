@@ -2,8 +2,9 @@ import { ApiError, fail, permit } from '../shared/errors.mjs';
 import { text, eventKey } from '../shared/validation.mjs';
 import { one, rows } from '../shared/database.mjs';
 import { audit } from '../shared/audit.mjs';
-import { getBalance, move } from './inventory.mjs';
+import { move } from './inventory.mjs';
 import { notify, resolvePendingReturnAlert } from './notifications.mjs';
+import { cancelRetrievalsWithoutDebt } from './planning.mjs';
 
 export async function ageReturns(db, user) {
   const expired = await rows(
@@ -68,7 +69,7 @@ export async function handleReturns(db, user, method, id, action, body) {
 }
 
 async function collectReturn(db, user, id, body, pendingReturn) {
-  permit(user, 'chofer');
+  permit(user, 'chofer', 'administrador');
   const key = body?.evento ? eventKey(body) : 'retiro-' + id;
 
   const movimientosAnteriores = await rows(
@@ -111,26 +112,32 @@ async function collectReturn(db, user, id, body, pendingReturn) {
   );
 
   fail(!['pendiente', 'no_retornaron'].includes(pendingReturn.estado), 'Retorno ya resuelto', 409);
-  const turn = await one(db, "SELECT * FROM turno WHERE estado='en_ruta' AND chofer=$1", [
-    user.username,
-  ]);
-  fail(
-    !(
-      await rows(
-        db,
-        'SELECT 1 FROM parada pa JOIN pedido p ON p.id_pedido=pa.pedido_id WHERE pa.turno_id=$1 AND p.id_cliente=$2',
-        [turn.id, pendingReturn.cliente_id],
-      )
-    ).length,
-    'Cliente fuera de tu ruta',
-    403,
-  );
+  // Turno en ruta del chofer que pasa por este cliente (con varios furgones, el que lo visita)
+  const turn = (
+    await rows(
+      db,
+      `SELECT t.* FROM turno t
+       WHERE t.estado='en_ruta' AND ($1::TEXT IS NULL OR t.chofer=$1)
+         AND EXISTS (SELECT 1 FROM parada pa JOIN pedido p ON p.id_pedido=pa.pedido_id
+                     WHERE pa.turno_id=t.id AND p.id_cliente=$2)
+       ORDER BY t.id LIMIT 1`,
+      [user.rol === 'chofer' ? user.username : null, pendingReturn.cliente_id],
+    )
+  )[0];
+  if (!turn) {
+    await one(
+      db,
+      "SELECT 1 FROM turno WHERE estado='en_ruta' AND ($1::TEXT IS NULL OR chofer=$1) LIMIT 1",
+      [user.rol === 'chofer' ? user.username : null],
+    );
+    fail(true, 'Cliente fuera de tu ruta', 403);
+  }
   const vehicle = await one(db, 'SELECT * FROM vehiculo WHERE id=$1', [turn.vehiculo_id]);
+  const board = (
+    await rows(db, 'SELECT llenos, vacios FROM v_carga_turno WHERE turno_id=$1', [turn.id])
+  )[0];
   fail(
-    (await getBalance(db, 'TRANSITO', 'LLENO')) +
-      (await getBalance(db, 'TRANSITO', 'VACIO')) +
-      cantidadRetirada >
-      vehicle.capacidad,
+    Number(board?.llenos ?? 0) + Number(board?.vacios ?? 0) + cantidadRetirada > vehicle.capacidad,
     'Retiro excede la capacidad del vehículo; coordina con administración',
     409,
   );
@@ -142,6 +149,7 @@ async function collectReturn(db, user, id, body, pendingReturn) {
     destino: 'TRANSITO',
     condicionDestino: 'VACIO',
     pedido: pendingReturn.pedido_id,
+    turno: turn.id,
     observacion: 'Retirado: incidencia ' + id,
     evento: key,
   });
@@ -162,6 +170,7 @@ async function collectReturn(db, user, id, body, pendingReturn) {
 
     await audit(db, user, 'Resolver retiro pendiente', id);
     await resolvePendingReturnAlert(db, id);
+    await cancelRetrievalsWithoutDebt(db, user, pendingReturn.cliente_id);
   }
 
   return { ok: true };
@@ -193,5 +202,50 @@ async function writeOffReturn(db, user, id, body, pendingReturn) {
     evidencia: evidence,
     cantidad: pendingReturn.cantidad,
   });
+  await cancelRetrievalsWithoutDebt(db, user, pendingReturn.cliente_id);
   return { ok: true };
+}
+
+/**
+ * Retira envases pendientes de un cliente, los más antiguos primero, y los sube al furgón del turno.
+ * Un retiro parcial deja el resto pendiente con su fecha original.
+ */
+export async function collectFifo(db, user, { clientId, cantidad, turnId, evento }) {
+  const pendingReturns = await rows(
+    db,
+    "SELECT * FROM retorno_pendiente WHERE cliente_id=$1 AND estado IN ('pendiente','no_retornaron') ORDER BY fecha, id FOR UPDATE",
+    [clientId],
+  );
+  let left = cantidad;
+  for (const r of pendingReturns) {
+    if (left <= 0) break;
+    const take = Math.min(r.cantidad, left);
+    await move(db, user, {
+      tipo: 'DEVOLUCION',
+      cantidad: take,
+      origen: 'RETORNOS',
+      condicionOrigen: 'VACIO',
+      destino: 'TRANSITO',
+      condicionDestino: 'VACIO',
+      pedido: r.pedido_id,
+      turno: turnId,
+      observacion: 'Retirado: incidencia ' + r.id,
+      evento: `${evento}-r${r.id}`,
+    });
+    if (take === r.cantidad) {
+      await db.query(
+        "UPDATE retorno_pendiente SET estado='retirado',fecha_resolucion=now(),retirado_por=$2 WHERE id=$1",
+        [r.id, user.username],
+      );
+      await resolvePendingReturnAlert(db, r.id);
+    } else {
+      await db.query('UPDATE retorno_pendiente SET cantidad=$2 WHERE id=$1', [
+        r.id,
+        r.cantidad - take,
+      ]);
+    }
+    left -= take;
+  }
+  await audit(db, user, 'Retiro de envases pendientes', clientId, { retirados: cantidad - left });
+  return cantidad - left;
 }

@@ -48,6 +48,21 @@
               <span class="text-xs text-muted">{{ f.paradas }} paradas · el chofer debe confirmar la carga en su app</span>
             </div>
           </div>
+          <!-- Orden de visita: calculado por tiempo de manejo; el planificador puede ajustarlo -->
+          <details v-if="f.pedidos.length > 1" class="route-order">
+            <summary>Orden de visita<span v-if="f.turno.rutaFuente === 'manual'"> · ajustado a mano</span></summary>
+            <ol>
+              <li v-for="(p, idx) in f.pedidos" :key="p.id">
+                <span class="route-name">{{ p.clienteNombre }} <small>{{ p.comuna }}</small></span>
+                <span class="route-move">
+                  <button class="btn btn-secondary btn-xs" :disabled="idx === 0" @click="moverParada(f.turno, p.id, -1)"
+                    :aria-label="`Subir ${p.clienteNombre}`"><ChevronUp :size="13" /></button>
+                  <button class="btn btn-secondary btn-xs" :disabled="idx === f.pedidos.length - 1"
+                    @click="moverParada(f.turno, p.id, 1)" :aria-label="`Bajar ${p.clienteNombre}`"><ChevronDown :size="13" /></button>
+                </span>
+              </li>
+            </ol>
+          </details>
         </template>
         <p v-else class="text-sm text-muted">
           {{ f.turno?.estado === 'finalizado' ? 'Ruta de hoy cerrada en bodega.' : `Sin pedidos hoy. Capacidad diaria: ${f.vehiculo.capacidadMax} bidones.` }}
@@ -214,7 +229,7 @@
         <div class="card-head">
           <div>
             <h2 class="card-title">Saldos de entregas parciales</h2>
-            <p class="card-sub">Ya pagados: quedan por planificar sin nuevo cobro.</p>
+            <p class="card-sub">Ya pagados: al cerrar la ruta quedan por planificar sin nuevo cobro.</p>
           </div>
           <span :class="['badge', saldos.length ? 'badge-warning' : 'badge-neutral']">{{ saldos.length }}</span>
         </div>
@@ -227,7 +242,28 @@
                 p.cantidadBidones }} · saldo {{ p.cantidadBidones - (p.cantidadEntregada ?? 0) }} · aceptado por el
                 cliente</span>
             </div>
-            <button @click="programarSaldo(p)" class="btn btn-secondary btn-sm">Llevar a planificar</button>
+            <span class="badge badge-neutral">Por planificar al cerrar la ruta</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Roturas informadas por el chofer: la oficina las clasifica (PBI 68) -->
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2 class="card-title">Roturas por clasificar</h2>
+            <p class="card-sub">El chofer las informa; la oficina las pasa a la bodega de rotos antes de cerrar la ruta.</p>
+          </div>
+          <span :class="['badge', roturasPorClasificar.length ? 'badge-danger' : 'badge-neutral']">{{ roturasPorClasificar.length }}</span>
+        </div>
+        <div v-if="roturasPorClasificar.length === 0" class="empty-box">Sin roturas por clasificar.</div>
+        <div v-else class="list-rows">
+          <div v-for="r in roturasPorClasificar" :key="r.id" class="list-row">
+            <div class="row-main">
+              <span class="font-bold">{{ r.codigoPedido }} · {{ r.clienteNombre }}</span>
+              <span class="text-xs text-muted">{{ r.cantidad }} botellón(es) · {{ r.detalle }}</span>
+            </div>
+            <button @click="clasificar(r.reporteId)" class="btn btn-secondary btn-sm">Clasificar a rotos</button>
           </div>
         </div>
       </section>
@@ -237,7 +273,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { ChevronLeft, ChevronRight, Clock, MapPin, MapPinned, Truck } from 'lucide-vue-next';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, MapPin, MapPinned, Truck } from 'lucide-vue-next';
 import CargaFurgonBar from '../../components/CargaFurgonBar.vue';
 import AguaNivel from '../../components/AguaNivel.vue';
 import { appStore } from '../../store/useAppStore';
@@ -370,6 +406,7 @@ const furgonesHoy = computed(() => vehiculos.value.map(vehiculo => {
     turno,
     carga: turno ? appStore.cargaDeTurno(turno) : { total: 0, llenos: 0, vacios: 0, noDevueltos: 0, rotos: 0 },
     planificado: turno ? appStore.cargaPlanificada(turno) : 0,
+    pedidos,
     paradas: pedidos.length,
     porVisitar: pedidos.filter(p => p.estado === 'en_despacho').length
   };
@@ -407,12 +444,20 @@ function terminarArrastre() {
   sobreCola.value = false;
 }
 
-function asignar(pedidoId: string, vehiculoId: string, fecha: string) {
+// Cada cambio se guarda en el servidor; si lo rechaza (cupo, día cerrado...), se muestra el motivo
+async function guardar(accion: () => Promise<unknown>, exito?: string) {
   try {
-    appStore.asignarPedido(pedidoId, vehiculoId, fecha);
+    await accion();
+    if (exito) notificar(exito, 'exito', 2500);
+    return true;
   } catch (err) {
     notificar((err as Error).message, 'error', 6000);
+    return false;
   }
+}
+
+function asignar(pedidoId: string, vehiculoId: string, fecha: string) {
+  void guardar(() => appStore.asignarPedido(pedidoId, vehiculoId, fecha));
 }
 
 function soltarEnCelda(vehiculoId: string, fecha: string) {
@@ -439,46 +484,52 @@ function colocarSeleccionado(vehiculoId: string, fecha: string) {
 }
 
 function quitar(pedidoId: string) {
-  try {
-    appStore.desasignarPedido(pedidoId);
-  } catch (err) {
-    notificar((err as Error).message, 'error');
-  }
+  void guardar(() => appStore.desasignarPedido(pedidoId));
 }
 
-function cambiarCapacidad(vehiculoId: string, input: HTMLInputElement) {
-  try {
-    appStore.cambiarCapacidadVehiculo(vehiculoId, Number(input.value));
-    notificar('Capacidad diaria actualizada.', 'exito', 2500);
-  } catch (err) {
-    notificar((err as Error).message, 'error', 6000);
-    input.value = String(appStore.vehiculo(vehiculoId)?.capacidadMax ?? '');
-  }
+async function cambiarCapacidad(vehiculoId: string, input: HTMLInputElement) {
+  const ok = await guardar(() => appStore.cambiarCapacidadVehiculo(vehiculoId, Number(input.value)), 'Capacidad diaria actualizada.');
+  if (!ok) input.value = String(appStore.vehiculo(vehiculoId)?.capacidadMax ?? '');
+}
+
+// PBI 70: el planificador puede ajustar a mano el orden de visita antes de que el furgón salga
+function moverParada(turno: TurnoDespacho, pedidoId: string, delta: -1 | 1) {
+  const ids = appStore.pedidosDeTurno(turno).map(p => p.id);
+  const i = ids.indexOf(pedidoId);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  void guardar(() => appStore.ordenarParadasManual(turno.id, ids));
 }
 
 // ---------------------------------------------------------------------------
 // Novedades y cierre de ruta
 // ---------------------------------------------------------------------------
 const ausencias = computed(() => appStore.state.pedidos.filter(p => p.estado === 'ausente'));
+// Saldos de parciales: con la ruta aún abierta; al cerrarla quedan por planificar sin nuevo cobro
 const saldos = computed(() => appStore.state.pedidos.filter(p =>
-  p.estado === 'parcial' && !p.saldoProgramado && (p.cantidadEntregada ?? p.cantidadBidones) < p.cantidadBidones
+  p.estado === 'parcial' && (p.cantidadEntregada ?? p.cantidadBidones) < p.cantidadBidones
 ));
+// Roturas informadas que la oficina debe clasificar antes de cerrar la ruta
+const roturasPorClasificar = computed(() => appStore.state.roturasBodega.filter(r => r.estado === 'por_clasificar'));
 
 function reprogramar(p: Pedido, cuando: 'hoy' | 'manana') {
-  appStore.reprogramarAusente(p.id, cuando);
-  notificar(cuando === 'hoy'
+  void guardar(() => appStore.reprogramarAusente(p.id, cuando), cuando === 'hoy'
     ? `${p.clienteNombre} vuelve a la ruta de hoy.`
-    : `${p.codigo} vuelve a por planificar; sus llenos regresan a bodega.`, 'info');
+    : `${p.codigo} vuelve a por planificar; sus llenos regresan a bodega.`);
 }
 
-function programarSaldo(p: Pedido) {
-  appStore.programarSaldoParcial(p.id);
-  notificar(`Saldo de ${p.codigo} quedó por planificar con su pago original.`, 'exito');
+function clasificar(reporteId?: string) {
+  if (reporteId) void guardar(() => appStore.clasificarRotura(reporteId), 'Rotura clasificada a la bodega de rotos.');
 }
 
-function liquidar(turnoId: string) {
-  const r = appStore.liquidarRetornoFurgonCentral(turnoId);
-  notificar(`Ruta cerrada: ${r.vaciosRecolectados} vacíos y ${r.llenosNoEntregados} llenos ingresan a bodega central.`, 'exito', 6000);
+async function liquidar(turnoId: string) {
+  try {
+    const r = await appStore.liquidarRetornoFurgonCentral(turnoId);
+    notificar(`Ruta cerrada: ${r.vaciosRecolectados} vacíos y ${r.llenosNoEntregados} llenos ingresan a bodega central.`, 'exito', 6000);
+  } catch (err) {
+    notificar((err as Error).message, 'error', 6000);
+  }
 }
 </script>
 
@@ -996,9 +1047,57 @@ function liquidar(turnoId: string) {
 
 .despacho-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 20px;
   align-items: start;
+}
+
+/* Orden de visita del turno en bodega (ajuste manual, PBI 70) */
+.route-order {
+  margin-top: 10px;
+  font-size: 0.8rem;
+}
+
+.route-order summary {
+  cursor: pointer;
+  color: var(--am-petroleo);
+  font-weight: 600;
+}
+
+.route-order ol {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.route-order li::marker {
+  font-weight: 700;
+}
+
+.route-order li {
+  padding-left: 2px;
+}
+
+.route-order li > * {
+  vertical-align: middle;
+}
+
+.route-name small {
+  color: var(--text-muted, #64748b);
+}
+
+.route-move {
+  float: right;
+  display: inline-flex;
+  gap: 4px;
+}
+
+.btn-xs {
+  padding: 2px 6px;
+  min-height: 0;
+  line-height: 1;
 }
 
 @media (max-width: 1100px) {

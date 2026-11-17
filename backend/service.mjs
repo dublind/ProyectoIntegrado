@@ -12,7 +12,6 @@ import { handleInventory } from './services/inventory.mjs';
 import { handleNotifications } from './services/notifications.mjs';
 import { handleRequests } from './services/whatsapp.mjs';
 import { handleExport } from './services/exports.mjs';
-import { handleSharedState } from './services/shared-state.mjs';
 
 // Mantener los exports que utiliza el servidor y cualquier consumidor local.
 export { ApiError, fail, permit } from './shared/errors.mjs';
@@ -36,13 +35,12 @@ const handlers = {
 export async function execute(db, user, method, url, body, context = {}) {
   const parts = url.split('/').filter(Boolean);
   const resource = parts[1];
-  const id = Number(parts[2]);
-  const action = parts[3];
+  // /recurso/:id/accion o /recurso/accion (acción sin registro, ej. POST /orders/retrieval)
+  const numeric = parts[2] === undefined || /^\d+$/.test(parts[2]);
+  const id = numeric ? Number(parts[2]) : 0;
+  const action = numeric ? parts[3] : parts[2];
   if (resource === 'state' && method === 'GET') {
     return getState(db, user);
-  }
-  if (resource === 'shared-state') {
-    return handleSharedState(db, user, method, body);
   }
   if (resource === 'export') {
     return handleExport(db, user, method, null, null, body, { ...context, resource: parts[2] });

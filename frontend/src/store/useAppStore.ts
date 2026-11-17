@@ -1,474 +1,188 @@
-import { reactive, computed } from 'vue';
-import type { Actividad, Cliente, Pedido, Vehiculo, TurnoDespacho, CuentaBancaria, InventarioBodega, MedioPago, RegistroEnvase, RegistroRotura, NotificacionInterna } from '../types';
+import { computed, reactive } from 'vue';
+import type { Actividad, MedioPago, Pedido, TurnoDespacho, Vehiculo } from '../types';
+import { api, ApiError, event, type Row } from '../services/api';
+import { queue } from '../services/offline';
 import { BODEGA_CENTRAL, geocodificarSimulado, ordenarRutaLocal } from '../utils/geo';
 import { optimizarOrden } from '../utils/rutas';
-import { ahoraISO, diasDesde, hoyISO } from '../utils/formato';
+import { diasDesde, hoyISO } from '../utils/formato';
 import { normalizarTelefono } from '../utils/validacion';
-import { recargoDelivery } from '../utils/comunas';
+import { auditar, mapearEstado, type EstadoUI, type ResultadoAuditoria } from './mapeo';
 
-const STORAGE_KEY = 'agua_purificada_mvp_store_v5'; // v5: demo sin pedidos duplicados de versiones anteriores
+export type { ResultadoAuditoria };
 
-// Fechas de la demo relativas a hoy, para que la antigüedad de los envases (30/60 días) sea visible
-function haceDias(dias: number, hora = '10:00') {
-  const d = new Date();
-  d.setDate(d.getDate() - dias);
-  return `${hoyISO(d)} ${hora}`;
-}
-
-const clientesIniciales: Cliente[] = [
-  {
-    id: 'cli-1',
-    nombre: 'Carolina Valenzuela',
-    telefono: '+56 9 8765 4321',
-    direccion: 'Av. Providencia 1245, Depto 602',
-    comuna: 'Providencia',
-    coords: { lat: -33.4296, lng: -70.6168 },
-    deudaEnvases: 0,
-    ultimoPedido: {
-      cantidadBidones: 2,
-      tipoProducto: 'Agua Purificada 20L Sellada',
-      fecha: haceDias(1).slice(0, 10)
-    }
-  },
-  {
-    id: 'cli-2',
-    nombre: 'Estudio Jurídico & Asociados',
-    telefono: '+56 9 7654 3210',
-    direccion: 'Ahumada 341, Of. 804',
-    comuna: 'Santiago Centro',
-    coords: { lat: -33.4381, lng: -70.6506 },
-    deudaEnvases: 1, // Tiene un botellón pendiente
-    ultimoPedido: {
-      cantidadBidones: 4,
-      tipoProducto: 'Agua Purificada 20L Sellada',
-      fecha: haceDias(1).slice(0, 10)
-    }
-  },
-  {
-    id: 'cli-3',
-    nombre: 'Gonzalo Morales',
-    telefono: '+56 9 9123 4567',
-    direccion: 'Los Leones 2341, Casa B',
-    comuna: 'Providencia',
-    coords: { lat: -33.4362, lng: -70.6012 },
-    deudaEnvases: 0,
-    ultimoPedido: {
-      cantidadBidones: 1,
-      tipoProducto: 'Agua Purificada 20L Sellada',
-      fecha: haceDias(1).slice(0, 10)
-    }
-  },
-  {
-    id: 'cli-4',
-    nombre: 'Panadería y Café El Molino',
-    telefono: '+56 9 6543 2109',
-    direccion: 'Av. Irarrázaval 3820',
-    comuna: 'Ñuñoa',
-    coords: { lat: -33.4547, lng: -70.5878 },
-    deudaEnvases: 2, // Deuda de 2 envases
-    ultimoPedido: {
-      cantidadBidones: 3,
-      tipoProducto: 'Agua Purificada 20L Sellada',
-      fecha: haceDias(0).slice(0, 10)
-    }
-  }
-];
-
-const vehiculosIniciales: Vehiculo[] = [
-  {
-    id: 'veh-1',
-    patente: 'KBLP-42',
-    modelo: 'Peugeot Partner Maxi (Furgón 1)',
-    capacidadMax: 20, // Parametrizable
-    choferAsignado: 'Pedro Chofer',
-    activo: true
-  },
-  {
-    id: 'veh-2',
-    patente: 'RDJS-88',
-    modelo: 'Citroën Berlingo (Furgón 2)',
-    capacidadMax: 12,
-    choferAsignado: 'Matías González',
-    activo: true
-  }
-];
-
-// Cuenta única de la empresa para recibir transferencias (sin rotación automática entre cuentas)
-const cuentasBancariasIniciales: CuentaBancaria[] = [
-  {
-    id: 'cta-1',
-    banco: 'Banco Estado',
-    tipoCuenta: 'Cuenta RUT / Vista',
-    numeroCuenta: '17.849.231-K',
-    titular: 'Aguas Purificadas Erick SpA',
-    rut: '76.892.411-5',
-    email: 'pagos@aguapurificada.cl',
-    comprobantesProcesados: 0,
-    activa: true
-  }
-];
-
-const pedidosIniciales: Pedido[] = [
-  {
-    id: 'ped-101',
-    codigo: 'PED-101',
-    clienteId: 'cli-1',
-    clienteNombre: 'Carolina Valenzuela',
-    telefono: '+56 9 8765 4321',
-    direccion: 'Av. Providencia 1245, Depto 602',
-    comuna: 'Providencia',
-    coords: { lat: -33.4296, lng: -70.6168 },
-    cantidadBidones: 2,
-    tipoProducto: 'Agua Purificada 20L Sellada',
-    precioUnitario: 3500,
-    total: 7000,
-    estado: 'programado',
-    medioPago: 'webpay',
-    fechaCreacion: haceDias(1, '09:30'),
-    promesaEntrega: 'Hoy',
-    linkWebpay: 'https://webpay.transbank.cl/p/tx-9921',
-    tieneAlertaDeuda: false,
-    deudaEnvasesPendiente: 0
-  },
-  {
-    id: 'ped-102',
-    codigo: 'PED-102',
-    clienteId: 'cli-2',
-    clienteNombre: 'Estudio Jurídico & Asociados',
-    telefono: '+56 9 7654 3210',
-    direccion: 'Ahumada 341, Of. 804',
-    comuna: 'Santiago Centro',
-    coords: { lat: -33.4381, lng: -70.6506 },
-    cantidadBidones: 4,
-    tipoProducto: 'Agua Purificada 20L Sellada',
-    precioUnitario: 3500,
-    total: 14000,
-    estado: 'programado',
-    medioPago: 'transferencia',
-    fechaCreacion: haceDias(1, '10:15'),
-    promesaEntrega: 'Hoy',
-    comprobanteTransferencia: 'comprobante_banco_102.pdf',
-    cuentaBancariaId: 'cta-1',
-    tieneAlertaDeuda: true,
-    deudaEnvasesPendiente: 1
-  },
-  {
-    id: 'ped-103',
-    codigo: 'PED-103',
-    clienteId: 'cli-3',
-    clienteNombre: 'Gonzalo Morales',
-    telefono: '+56 9 9123 4567',
-    direccion: 'Los Leones 2341, Casa B',
-    comuna: 'Providencia',
-    coords: { lat: -33.4362, lng: -70.6012 },
-    cantidadBidones: 1,
-    tipoProducto: 'Agua Purificada 20L Sellada',
-    precioUnitario: 3500,
-    total: 3500,
-    estado: 'programado',
-    medioPago: 'webpay',
-    fechaCreacion: haceDias(1, '11:40'),
-    promesaEntrega: 'Hoy',
-    linkWebpay: 'https://webpay.transbank.cl/p/tx-9925',
-    tieneAlertaDeuda: false,
-    deudaEnvasesPendiente: 0
-  },
-  {
-    id: 'ped-104',
-    codigo: 'PED-104',
-    clienteId: 'cli-4',
-    clienteNombre: 'Panadería y Café El Molino',
-    telefono: '+56 9 6543 2109',
-    direccion: 'Av. Irarrázaval 3820',
-    comuna: 'Ñuñoa',
-    coords: { lat: -33.4547, lng: -70.5878 },
-    cantidadBidones: 3,
-    tipoProducto: 'Agua Purificada 20L Sellada',
-    precioUnitario: 3500,
-    total: 10500,
-    estado: 'pendiente_pago',
-    medioPago: 'transferencia',
-    fechaCreacion: haceDias(0, '08:20'),
-    promesaEntrega: 'Mañana',
-    tieneAlertaDeuda: true,
-    deudaEnvasesPendiente: 2
-  }
-];
-
-// Envases no devueltos con fecha de origen (antigüedad: 12, 38 y 64 días)
-const registrosEnvasesIniciales: RegistroEnvase[] = [
-  {
-    id: 'env-1',
-    clienteId: 'cli-2',
-    clienteNombre: 'Estudio Jurídico & Asociados',
-    pedidoCodigo: 'PED-087',
-    cantidad: 1,
-    fechaOrigen: haceDias(12).slice(0, 10),
-    estado: 'pendiente'
-  },
-  {
-    id: 'env-2',
-    clienteId: 'cli-4',
-    clienteNombre: 'Panadería y Café El Molino',
-    pedidoCodigo: 'PED-064',
-    cantidad: 1,
-    fechaOrigen: haceDias(38).slice(0, 10),
-    estado: 'pendiente'
-  },
-  {
-    id: 'env-3',
-    clienteId: 'cli-4',
-    clienteNombre: 'Panadería y Café El Molino',
-    pedidoCodigo: 'PED-041',
-    cantidad: 1,
-    fechaOrigen: haceDias(64).slice(0, 10),
-    estado: 'pendiente'
-  }
-];
-
-// Turno de hoy del furgón 1 ya planificado, aún en bodega (el chofer carga e inicia la ruta desde su app)
-const turnosIniciales: TurnoDespacho[] = [
-  {
-    id: `turno-veh-1-${hoyISO()}`,
-    fecha: hoyISO(),
-    turno: 'Mañana',
-    vehiculoId: 'veh-1',
-    choferNombre: 'Pedro Chofer',
-    pedidosIds: ['ped-101', 'ped-102', 'ped-103'],
-    capacidadMax: 20,
-    botellonesCargados: 0,
-    estado: 'preparacion'
-  }
-];
-
-const inventarioInicial: InventarioBodega = {
-  llenosCentral: 149, // incluye los 7 del turno de hoy: salen de bodega cuando el chofer carga
-  vaciosCentral: 85,
-  enTransito: 0, // Sincronizado con lo que va a bordo de los furgones en ruta
-  pendientesDevolucion: 3, // Sincronizado con registros de envases pendientes
-  rotosBodega: 4, // Botellones rotos esperando baja de Erick
-  noRetornaron30d: 2,
-  bajasDefinitivas60d: 5
-};
-
-// Rotos que ya estaban en bodega al iniciar la demo, sin detalle individual
-function roturasPrevias(cantidad: number): RegistroRotura[] {
-  return Array.from({ length: Math.max(0, cantidad) }, (_, i) => ({
-    id: `rotura-previa-${i + 1}`,
-    pedidoId: '',
-    codigoPedido: 'Registro previo',
-    clienteNombre: 'Sin detalle disponible',
-    producto: 'Agua Purificada 20L Sellada',
-    cantidad: 1,
-    detalle: 'Merma inicial sin detalle individual.',
-    fecha: haceDias(10),
-    estado: 'pendiente_baja'
-  }));
-}
-
-const STOCK_REFERENCIA_INICIAL =
-  inventarioInicial.llenosCentral + inventarioInicial.vaciosCentral + inventarioInicial.enTransito +
-  inventarioInicial.pendientesDevolucion + inventarioInicial.rotosBodega + inventarioInicial.bajasDefinitivas60d;
-
-export interface ResultadoAuditoria {
-  ok: boolean;
-  controles: { nombre: string; ok: boolean; detalle: string }[];
-}
+/**
+ * Estado del panel y de la app del chofer. La fuente de verdad es la API (PostgreSQL):
+ * cada acción llama a su endpoint y luego se vuelve a leer el estado. No hay datos de
+ * demostración ni reglas de negocio duplicadas en el navegador (PBI 102).
+ * - Lectura periódica para ver lo que hacen otros dispositivos (chofer ↔ oficina).
+ * - El chofer puede seguir sin señal: sus acciones quedan en el teléfono (IndexedDB) y se
+ *   envían al reconectar; cada una lleva un identificador de evento, así que no se duplican.
+ */
 
 export interface CargaFurgon {
   total: number; // envases a bordo
   llenos: number; // llenos aún por entregar
   vacios: number; // vacíos recogidos
-  // No están a bordo, pero ocupaban cupo del turno: se muestran aparte para no confundirlos con espacio libre
   noDevueltos: number; // vacíos que el cliente no entregó (pendientes de devolución)
-  rotos: number; // botellones rotos en el trayecto (pasaron a la bodega de rotos)
+  rotos: number; // botellones rotos informados en el trayecto
 }
 
-function clonar<T>(v: T): T {
-  return JSON.parse(JSON.stringify(v));
-}
+const INTERVALO_MS = 4000;
+const VACIA: CargaFurgon = { total: 0, llenos: 0, vacios: 0, noDevueltos: 0, rotos: 0 };
 
-const idTurno = (vehiculoId: string, fecha: string) => `turno-${vehiculoId}-${fecha}`;
-
-// Una parada de retiro no entrega llenos; ocupa cupo con los vacíos que se van a recoger
-const esRetiro = (p: Pedido) => p.tipo === 'retiro';
-const llenosDe = (p: Pedido) => (esRetiro(p) ? 0 : p.cantidadBidones);
-const cupoDe = (p: Pedido) => (esRetiro(p) ? p.retiroEnvases ?? 0 : p.cantidadBidones);
-
-// Identificador único aunque se creen varios registros en el mismo milisegundo
-// (antes se usaba Date.now() y dos pedidos podían quedar con el mismo id)
-const nuevoId = (prefijo: string) =>
-  `${prefijo}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`}`;
 const nombreCorto = (v: Vehiculo) => v.modelo.replace(/\s*\(.*\)$/, '');
+const idNum = (id: string) => Number(id);
+const llenosDe = (p: Pedido) => (p.tipo === 'retiro' ? 0 : p.cantidadBidones);
+const cupoDe = (p: Pedido) => (p.tipo === 'retiro' ? p.retiroEnvases ?? 0 : p.cantidadBidones);
+const claveTexto = (t: string) => t.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/\s+/g, ' ').trim();
+const digitos = (t: string) => t.replace(/\D/g, '').replace(/^56/, '');
 
-// Misma dirección aunque cambien mayúsculas, tildes o espacios
-const claveDireccion = (p: { direccion: string; comuna: string }) =>
-  `${p.direccion}|${p.comuna}`.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/\s+/g, ' ').trim();
+function estadoVacio(): EstadoUI {
+  return {
+    clientes: [], pedidos: [], vehiculos: [], cuentasBancarias: [], registrosEnvases: [], roturasBodega: [],
+    notificacionesInternas: [], turnos: [], paradas: {}, actividad: [], inconsistencias: [], rotosEnBodegaDeRotos: 0,
+    inventario: { llenosCentral: 0, vaciosCentral: 0, enTransito: 0, pendientesDevolucion: 0, rotosBodega: 0, noRetornaron30d: 0, bajasDefinitivas60d: 0 }
+  };
+}
+
+// Acción del chofer pendiente de enviar (sin conexión)
+interface AccionPendiente {
+  id: string;
+  username: string;
+  path: string;
+  body: Row;
+  orden: number;
+  parche?: ParcheLocal;
+}
+// Cambio visible mientras la acción espera conexión (se vuelve a aplicar tras cada lectura)
+interface ParcheLocal {
+  turnoId?: string;
+  pedidoId?: string;
+  estadoParada?: Pedido['estado'];
+  estadoTurno?: TurnoDespacho['estado'];
+}
 
 class AppStore {
   state = reactive({
-    clientes: clonar(clientesIniciales),
-    pedidos: clonar(pedidosIniciales),
-    vehiculos: clonar(vehiculosIniciales),
-    cuentasBancarias: clonar(cuentasBancariasIniciales),
-    registrosEnvases: clonar(registrosEnvasesIniciales),
-    // Bodega de rotos con historial por rotura y avisos internos (PBI 68)
-    roturasBodega: roturasPrevias(inventarioInicial.rotosBodega),
-    notificacionesInternas: [] as NotificacionInterna[],
-    // Un turno por furgón y por día; la capacidad diaria del furgón es su N_max
-    turnos: clonar(turnosIniciales),
-    inventario: clonar(inventarioInicial),
+    ...estadoVacio(),
+    cargado: false,
+    errorCarga: '',
     modoOffline: false,
-    actividad: [] as Actividad[],
-    // Envases que existen físicamente desde el inicio (stock total + bajas). Sirve para auditar la cuadratura.
-    stockReferencia: STOCK_REFERENCIA_INICIAL,
+    pendientesSincronizar: 0,
     actualizadoEn: ''
   });
 
+  private usuario = '';
+  private datosApi: Row = {};
+  private temporizador: ReturnType<typeof setInterval> | undefined;
+  private primeraCarga: Promise<void> | null = null;
+  private ultimaActividad = -1;
   private oyentesRemotos: ((nuevas: Actividad[]) => void)[] = [];
+  private pendientes: AccionPendiente[] = [];
+  private rutasEnCalculo = new Set<string>();
+  private leyendo: Promise<void> | null = null;
 
-  constructor() {
-    this.cargarDesdeLocalStorage();
-    this.sincronizarInventario();
-    this.escucharOtrasPestanas();
-    // Turnos aún en bodega sin orden óptimo calculado (por ejemplo, la semilla)
-    this.state.turnos.filter(t => t.estado === 'preparacion' && !t.ordenParadas).forEach(t => void this.optimizarRuta(t.id));
-  }
+  // ==========================================================================
+  // Lectura del servidor
+  // ==========================================================================
 
-  /**
-   * Sincronización en vivo entre pestañas del mismo navegador (panel y app del chofer abiertos a la vez).
-   * El evento `storage` solo llega a las otras pestañas, así que no hay bucles.
-   * Entre dispositivos distintos esto lo reemplazará Supabase Realtime.
-   */
-  private escucharOtrasPestanas() {
-    if (typeof window === 'undefined') return;
-    window.addEventListener('storage', e => {
-      if (e.key !== STORAGE_KEY || !e.newValue) return;
-      try {
-        this.aplicarEstadoRemoto(JSON.parse(e.newValue), false);
-      } catch (err) {
-        console.warn('No se pudo sincronizar con otra pestaña', err);
-      }
-    });
-  }
-
-  /**
-   * Aplica el estado que llegó de otra pestaña o de otro dispositivo (servidor).
-   * El modo offline es propio de cada dispositivo y no se copia.
-   */
-  aplicarEstadoRemoto(remoto: Record<string, unknown>, persistir = true) {
-    const idsLocales = new Set(this.state.actividad.map(a => a.id));
-    const nuevas = ((remoto.actividad ?? []) as Actividad[]).filter(a => !idsLocales.has(a.id));
-    const { modoOffline: _offlineRemoto, ...resto } = remoto;
-    Object.assign(this.state, resto);
-    if (!Array.isArray(remoto.roturasBodega)) this.state.roturasBodega = roturasPrevias(this.state.inventario.rotosBodega);
-    if (!Array.isArray(remoto.notificacionesInternas)) this.state.notificacionesInternas = [];
-    if (persistir) {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
-      } catch {
-        /* sin almacenamiento local: el estado sigue en memoria */
+  /** Empieza a leer el estado (y devuelve la primera lectura) para el usuario con sesión. */
+  iniciar(username: string) {
+    if (this.usuario !== username) {
+      this.detener();
+      this.usuario = username;
+      this.primeraCarga = null;
+    }
+    if (!this.primeraCarga) {
+      this.primeraCarga = this.recargar().catch(err => {
+        this.state.errorCarga = (err as Error).message;
+      });
+      void this.cargarPendientes();
+      if (typeof window !== 'undefined') {
+        this.temporizador = setInterval(() => {
+          if (document.visibilityState === 'visible') void this.recargar().catch(() => undefined);
+        }, INTERVALO_MS);
+        window.addEventListener('online', this.alReconectar);
+        document.addEventListener('visibilitychange', this.alVolver);
       }
     }
-    if (nuevas.length) this.oyentesRemotos.forEach(fn => fn(nuevas));
+    return this.primeraCarga;
   }
 
-  // Estado que se comparte con los demás dispositivos (sin el modo offline local)
-  exportarEstado() {
-    const { modoOffline: _local, ...compartido } = JSON.parse(JSON.stringify(this.state));
-    return compartido as Record<string, unknown>;
+  detener() {
+    clearInterval(this.temporizador);
+    this.temporizador = undefined;
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('online', this.alReconectar);
+      document.removeEventListener('visibilitychange', this.alVolver);
+    }
+    this.usuario = '';
+    this.primeraCarga = null;
+    this.ultimaActividad = -1;
+    this.pendientes = [];
+    Object.assign(this.state, estadoVacio(), { cargado: false, errorCarga: '', pendientesSincronizar: 0 });
   }
 
-  // Avisa a la sincronización con el servidor cada vez que el estado cambia localmente
-  private oyentesGuardado: (() => void)[] = [];
-  alGuardar(fn: () => void) {
-    this.oyentesGuardado.push(fn);
+  private alReconectar = () => void this.sincronizarPendientes();
+  private alVolver = () => {
+    if (document.visibilityState === 'visible') void this.recargar().catch(() => undefined);
+  };
+
+  /** Lee el estado completo y lo traduce al modelo de la interfaz. */
+  async recargar(): Promise<void> {
+    if (this.state.modoOffline) return;
+    if (this.leyendo) return this.leyendo;
+    this.leyendo = (async () => {
+      try {
+        const datos = await api('/state');
+        this.datosApi = datos;
+        const mapeado = mapearEstado(datos, hoyISO());
+        Object.assign(this.state, mapeado, { cargado: true, errorCarga: '', actualizadoEn: new Date().toISOString() });
+        this.aplicarParches();
+        this.avisarActividadRemota(datos.auditoria ?? []);
+        void this.optimizarPendientes();
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) this.detener();
+        throw err;
+      } finally {
+        this.leyendo = null;
+      }
+    })();
+    return this.leyendo;
   }
 
-  // Permite al panel avisar lo que hizo el chofer en otra pestaña
+  // Lo que hace el chofer en su app aparece como aviso en el panel (y viceversa)
+  private avisarActividadRemota(auditoria: Row[]) {
+    const maximo = auditoria.reduce((m, a) => Math.max(m, Number(a.id)), 0);
+    if (this.ultimaActividad >= 0) {
+      const nuevas = this.state.actividad.filter(a => Number(a.id.slice(4)) > this.ultimaActividad);
+      const ajenas = nuevas.filter(a => {
+        const fila = auditoria.find(x => `aud-${x.id}` === a.id);
+        return fila && fila.actor !== this.usuario;
+      });
+      if (ajenas.length) this.oyentesRemotos.forEach(fn => fn(ajenas));
+    }
+    this.ultimaActividad = maximo;
+  }
+
   alRecibirActividadRemota(fn: (nuevas: Actividad[]) => void) {
     this.oyentesRemotos.push(fn);
   }
 
-  private registrarActividad(texto: string, origen: Actividad['origen'], tipo: Actividad['tipo'] = 'info') {
-    this.state.actividad.unshift({ id: nuevoId('act'), texto, origen, tipo, fecha: ahoraISO() });
-    this.state.actividad.splice(30);
-  }
-
-  private guardarEnLocalStorage() {
-    this.state.actualizadoEn = new Date().toISOString();
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
-    } catch (e) {
-      console.warn('No se pudo guardar en localStorage', e);
-    }
-    this.oyentesGuardado?.forEach(fn => fn());
-  }
-
-  private cargarDesdeLocalStorage() {
-    try {
-      // Borra datos de versiones anteriores de la demo (podían traer pedidos duplicados)
-      Object.keys(localStorage)
-        .filter(k => k.startsWith('agua_purificada_mvp_store') && k !== STORAGE_KEY)
-        .forEach(k => localStorage.removeItem(k));
-      const data = localStorage.getItem(STORAGE_KEY);
-      if (data) {
-        const parsed = JSON.parse(data);
-        Object.assign(this.state, parsed);
-        // Datos guardados antes del PBI 68: se reconstruye el registro de rotos desde el contador
-        if (!Array.isArray(parsed.roturasBodega)) this.state.roturasBodega = roturasPrevias(this.state.inventario.rotosBodega);
-        if (!Array.isArray(parsed.notificacionesInternas)) this.state.notificacionesInternas = [];
-      }
-    } catch (e) {
-      console.warn('No se pudo cargar desde localStorage', e);
-    }
-  }
-
-  /**
-   * Sincronización continua de inventario con todos los módulos:
-   * - En tránsito: exactamente igual a lo que va a bordo de todos los furgones.
-   * - Pendientes: suma de los registros de envases no devueltos que siguen activos.
-   * - Deuda de cada cliente y alerta de sus pedidos abiertos derivadas de esos registros.
-   */
-  sincronizarInventario() {
-    // 1. En tránsito se sincroniza con lo cargado en los furgones
-    this.state.inventario.enTransito = this.state.turnos.reduce((acc, t) => acc + t.botellonesCargados, 0);
-
-    // 2. Pendientes y no retornados (30 días) se derivan de los registros activos
-    const activos = this.state.registrosEnvases.filter(r => r.estado === 'pendiente');
-    this.state.inventario.pendientesDevolucion = activos.reduce((acc, r) => acc + r.cantidad, 0);
-    this.state.inventario.noRetornaron30d = activos
-      .filter(r => diasDesde(r.fechaOrigen) >= 30)
-      .reduce((acc, r) => acc + r.cantidad, 0);
-
-    // 3. Rotos en bodega: los registrados que aún esperan baja del administrador
-    this.state.inventario.rotosBodega = this.state.roturasBodega
-      .filter(r => r.estado === 'pendiente_baja')
-      .reduce((acc, r) => acc + r.cantidad, 0);
-
-    // 4. Deuda en ficha de cliente y alerta en pedidos aún no cerrados
-    this.state.clientes.forEach(c => {
-      c.deudaEnvases = activos.filter(r => r.clienteId === c.id).reduce((acc, r) => acc + r.cantidad, 0);
-    });
-    this.state.pedidos.forEach(p => {
-      if (['pendiente_pago', 'pagado', 'programado', 'en_despacho', 'ausente'].includes(p.estado)) {
-        const cli = this.state.clientes.find(c => c.id === p.clienteId);
-        p.deudaEnvasesPendiente = cli?.deudaEnvases ?? 0;
-        p.tieneAlertaDeuda = p.deudaEnvasesPendiente > 0;
-      }
-      if (!p.coords) p.coords = geocodificarSimulado(p.direccion, p.comuna);
-    });
-
-    this.guardarEnLocalStorage();
+  // Ejecuta una acción en el servidor y vuelve a leer el estado
+  private async enviar<T = Row>(path: string, body: unknown = {}, method = 'POST'): Promise<T> {
+    if (this.state.modoOffline) throw new Error('Sin conexión: esta acción necesita internet.');
+    const r = await api<T>(path, method, body);
+    await this.recargar().catch(() => undefined);
+    return r;
   }
 
   // ==========================================================================
   // Consultas
   // ==========================================================================
 
-  // Cuenta única donde los clientes depositan las transferencias
-  cuentaActiva = computed(() => {
-    return this.state.cuentasBancarias.find(c => c.activa) || this.state.cuentasBancarias[0];
+  cuentaActiva = computed(() => this.state.cuentasBancarias.find(c => c.activa) ?? this.state.cuentasBancarias[0] ?? {
+    id: '', banco: 'Sin cuenta configurada', tipoCuenta: '', numeroCuenta: '—', titular: '', rut: '', email: '', comprobantesProcesados: 0, activa: false
   });
 
   totalStockContinuo = computed(() => {
@@ -485,85 +199,34 @@ class AppStore {
   }
 
   turnoDePedido(pedidoId: string) {
-    return this.state.turnos.find(t => t.pedidosIds.includes(pedidoId));
+    const p = this.state.pedidos.find(x => x.id === pedidoId);
+    return p?.turnoId ? this.state.turnos.find(t => t.id === p.turnoId) : undefined;
   }
 
-  /**
-   * Otro pedido del mismo cliente o a la misma dirección ya planificado ese día en un turno abierto.
-   * Se usa para que un mismo domicilio no reciba dos furgones el mismo día.
-   */
-  pedidoMismoDestino(pedido: Pedido, fecha: string) {
-    const clave = claveDireccion(pedido);
-    for (const t of this.state.turnos) {
-      if (t.fecha !== fecha || t.estado === 'finalizado') continue;
-      const otro = this.state.pedidos.find(p => p.id !== pedido.id && t.pedidosIds.includes(p.id) &&
-        (p.clienteId === pedido.clienteId || claveDireccion(p) === clave));
-      if (otro) return { turno: t, pedido: otro };
-    }
-    return undefined;
-  }
-
-  // Paradas de un turno en el orden óptimo calculado; mientras se calcula, orden local aproximado
+  // Paradas de un turno en el orden guardado; mientras no exista, orden local aproximado
   pedidosDeTurno(turno: TurnoDespacho) {
-    const pedidos = this.state.pedidos.filter(p => turno.pedidosIds.includes(p.id));
-    const orden = turno.ordenParadas;
-    if (orden && pedidos.every(p => orden.includes(p.id))) {
-      return [...pedidos].sort((a, b) => orden.indexOf(a.id) - orden.indexOf(b.id));
-    }
-    return ordenarRutaLocal(pedidos);
-  }
-
-  /**
-   * Calcula el recorrido más rápido de un turno en bodega (sale y vuelve a la bodega) y lo guarda.
-   * Se recalcula cada vez que cambian sus pedidos; una vez en ruta el orden ya no cambia.
-   */
-  async optimizarRuta(turnoId: string) {
-    const turno = this.state.turnos.find(t => t.id === turnoId);
-    if (!turno || turno.estado !== 'preparacion') return;
-    const firma = [...turno.pedidosIds].sort().join(',');
-    const paradas = this.state.pedidos
-      .filter(p => turno.pedidosIds.includes(p.id))
-      .map(p => ({ id: p.id, coords: p.coords ?? geocodificarSimulado(p.direccion, p.comuna) }));
-    if (!paradas.length) {
-      Object.assign(turno, { ordenParadas: [], rutaKm: 0, rutaMin: 0, rutaFuente: undefined });
-      this.guardarEnLocalStorage();
-      return;
-    }
-    const r = await optimizarOrden(BODEGA_CENTRAL, paradas);
-    // Si mientras tanto cambiaron los pedidos del turno, este resultado ya no sirve
-    const actual = this.state.turnos.find(t => t.id === turnoId);
-    if (!actual || actual.estado !== 'preparacion' || [...actual.pedidosIds].sort().join(',') !== firma) return;
-    Object.assign(actual, { ordenParadas: r.orden, rutaKm: r.km, rutaMin: r.minutos, rutaFuente: r.fuente });
-    this.guardarEnLocalStorage();
-  }
-
-  // Invalida el orden guardado y lanza un nuevo cálculo
-  private reoptimizar(turno: TurnoDespacho | undefined) {
-    if (!turno || turno.estado !== 'preparacion') return;
-    turno.ordenParadas = undefined;
-    void this.optimizarRuta(turno.id);
+    const paradas = this.state.paradas[turno.id] ?? [];
+    return turno.ordenParadas ? paradas : ordenarRutaLocal(paradas);
   }
 
   // Bidones comprometidos en el turno (cuenta contra la capacidad diaria del furgón)
   cargaPlanificada(turno: TurnoDespacho) {
-    return this.state.pedidos
-      .filter(p => turno.pedidosIds.includes(p.id))
-      .reduce((acc, p) => acc + cupoDe(p), 0);
+    return (this.state.paradas[turno.id] ?? []).reduce((acc, p) => acc + cupoDe(p), 0);
   }
 
-  // Lo que va a bordo, separado en llenos por entregar y vacíos recogidos
+  // Lo que va a bordo según el libro de movimientos del turno
   cargaDeTurno(turno: TurnoDespacho): CargaFurgon {
-    const total = turno.botellonesCargados;
-    const pedidos = this.state.pedidos.filter(p => turno.pedidosIds.includes(p.id));
-    const enRuta = turno.estado === 'en_ruta';
-    const llenos = enRuta
-      ? pedidos.filter(p => p.estado === 'en_despacho' || p.estado === 'ausente').reduce((acc, p) => acc + llenosDe(p), 0)
-      : 0;
-    const noDevueltos = enRuta ? pedidos.reduce((acc, p) => acc + (p.envasesNoDevueltos ?? 0), 0) : 0;
-    const rotos = enRuta
-      ? pedidos.filter(p => p.estado === 'parcial').reduce((acc, p) => acc + p.cantidadBidones - (p.cantidadEntregada ?? p.cantidadBidones), 0)
-      : 0;
-    return { total, llenos, vacios: total - llenos, noDevueltos, rotos };
+    if (turno.estado !== 'en_ruta') return { ...VACIA };
+    const paradas = this.state.paradas[turno.id] ?? [];
+    const rotos = paradas.reduce((acc, p) => acc + (p.estado === 'parcial' ? p.cantidadBidones - (p.cantidadEntregada ?? p.cantidadBidones) : 0), 0);
+    // Los rotos siguen físicamente a bordo hasta que la oficina los clasifica a la bodega de rotos
+    const clasificados = this.state.roturasBodega
+      .filter(r => r.estado !== 'por_clasificar' && paradas.some(p => p.id === r.pedidoId && p.estado === 'parcial'))
+      .reduce((acc, r) => acc + r.cantidad, 0);
+    const llenos = Math.max(0, (turno.llenosABordo ?? 0) - (rotos - clasificados));
+    const vacios = turno.vaciosABordo ?? 0;
+    const noDevueltos = paradas.reduce((acc, p) => acc + (p.envasesNoDevueltos ?? 0), 0);
+    return { total: llenos + vacios, llenos, vacios, noDevueltos, rotos };
   }
 
   turnosDeHoy = computed(() => {
@@ -571,7 +234,7 @@ class AppStore {
     return this.state.turnos.filter(t => t.fecha === hoy);
   });
 
-  // Todas las paradas de hoy (todos los furgones), en orden geográfico por furgón
+  // Todas las paradas de hoy (todos los furgones), en orden de visita por furgón
   paradasDeHoy = computed(() => this.turnosDeHoy.value.flatMap(t => this.pedidosDeTurno(t)));
 
   // Suma de lo que va a bordo de todos los furgones
@@ -581,76 +244,20 @@ class AppStore {
       total: acc.total + c.total, llenos: acc.llenos + c.llenos, vacios: acc.vacios + c.vacios,
       noDevueltos: acc.noDevueltos + c.noDevueltos, rotos: acc.rotos + c.rotos
     };
-  }, { total: 0, llenos: 0, vacios: 0, noDevueltos: 0, rotos: 0 }));
+  }, { ...VACIA }));
 
-  registrosPendientes = computed(() => {
-    return this.state.registrosEnvases
-      .filter(r => r.estado === 'pendiente')
-      .map(r => ({ ...r, dias: diasDesde(r.fechaOrigen) }))
-      .sort((a, b) => b.dias - a.dias);
-  });
+  registrosPendientes = computed(() => this.state.registrosEnvases
+    .filter(r => r.estado === 'pendiente')
+    .map(r => ({ ...r, dias: diasDesde(r.fechaOrigen) }))
+    .sort((a, b) => b.dias - a.dias));
 
-  /**
-   * Auditoría de cuadratura: verifica que todos los módulos cuenten lo mismo después de cada acción.
-   * Si un control falla, hay un error de sincronización o de lógica.
-   */
-  auditoria = computed<ResultadoAuditoria>(() => {
-    const st = this.state;
-    const inv = st.inventario;
-    const activos = st.registrosEnvases.filter(r => r.estado === 'pendiente');
-    const deudaRegistros = activos.reduce((acc, r) => acc + r.cantidad, 0);
-    const carga = this.cargaFurgones.value;
-    const clientesDescuadrados = st.clientes.filter(c =>
-      c.deudaEnvases !== activos.filter(r => r.clienteId === c.id).reduce((acc, r) => acc + r.cantidad, 0));
-    const fisico = this.totalStockContinuo.value + inv.bajasDefinitivas60d;
-    const negativos = (Object.entries(inv) as [string, number][]).filter(([, v]) => v < 0).map(([k]) => k);
+  auditoria = computed<ResultadoAuditoria>(() => auditar(
+    this.state,
+    t => t.botellonesCargados,
+    t => this.cargaPlanificada(t)
+  ));
 
-    // Cada pedido en a lo más un turno, y su estado coincide con el del turno
-    const enVariosTurnos = st.pedidos.filter(p => st.turnos.filter(t => t.pedidosIds.includes(p.id)).length > 1);
-    const estadoIncoherente = st.pedidos.filter(p => {
-      const t = st.turnos.find(x => x.pedidosIds.includes(p.id));
-      if (p.estado === 'programado') return t?.estado !== 'preparacion';
-      if (p.estado === 'en_despacho' || p.estado === 'ausente') return t?.estado !== 'en_ruta';
-      return false;
-    });
-    const sobreCapacidad = st.turnos.filter(t => t.estado === 'preparacion' && this.cargaPlanificada(t) > t.capacidadMax);
-    const vaciosNegativos = st.turnos.filter(t => this.cargaDeTurno(t).vacios < 0);
-    const direccionEnDosFurgones = st.turnos.filter(t => t.estado !== 'finalizado').flatMap(t =>
-      st.pedidos.filter(p => t.pedidosIds.includes(p.id))
-        .filter(p => st.turnos.some(o => o.fecha === t.fecha && o.vehiculoId !== t.vehiculoId && o.estado !== 'finalizado' &&
-          st.pedidos.some(q => o.pedidosIds.includes(q.id) && claveDireccion(q) === claveDireccion(p)))));
-    const idsRepetidos = [st.pedidos, st.clientes, st.registrosEnvases, st.turnos]
-      .reduce((acc, lista) => acc + lista.length - new Set(lista.map(x => x.id)).size, 0);
-
-    const controles = [
-      { nombre: 'Stock físico conservado', ok: fisico === st.stockReferencia,
-        detalle: `${this.totalStockContinuo.value} en circulación + ${inv.bajasDefinitivas60d} bajas = ${fisico} (esperado ${st.stockReferencia})` },
-      { nombre: 'Furgones = inventario en tránsito', ok: inv.enTransito === carga.total,
-        detalle: `Inventario ${inv.enTransito} · furgones ${carga.total} (${carga.llenos} llenos + ${carga.vacios} vacíos)` },
-      { nombre: 'Vacíos a bordo no negativos', ok: vaciosNegativos.length === 0, detalle: `${carga.vacios} vacíos a bordo` },
-      { nombre: 'Pendientes = fichas de clientes', ok: inv.pendientesDevolucion === deudaRegistros && clientesDescuadrados.length === 0,
-        detalle: clientesDescuadrados.length
-          ? `Descuadre en: ${clientesDescuadrados.map(c => c.nombre).join(', ')}`
-          : `${inv.pendientesDevolucion} en inventario · ${deudaRegistros} en registros` },
-      { nombre: 'Turnos consistentes', ok: enVariosTurnos.length + estadoIncoherente.length + sobreCapacidad.length === 0,
-        detalle: enVariosTurnos.length ? `${enVariosTurnos.length} pedido(s) en más de un turno`
-          : estadoIncoherente.length ? `${estadoIncoherente.length} pedido(s) con estado distinto al de su turno`
-            : sobreCapacidad.length ? `${sobreCapacidad.length} turno(s) sobre su capacidad diaria`
-              : `${st.turnos.filter(t => t.estado !== 'finalizado').length} turno(s) abiertos` },
-      { nombre: 'Sin cantidades negativas', ok: negativos.length === 0, detalle: negativos.length ? negativos.join(', ') : 'Todas ≥ 0' },
-      { nombre: 'Una dirección, un furgón por día', ok: direccionEnDosFurgones.length === 0,
-        detalle: direccionEnDosFurgones.length
-          ? `Dos furgones van a: ${[...new Set(direccionEnDosFurgones.map(p => `${p.direccion}, ${p.comuna}`))].join('; ')}`
-          : 'Ningún domicilio recibe dos furgones el mismo día' },
-      { nombre: 'Identificadores únicos', ok: idsRepetidos === 0,
-        detalle: idsRepetidos ? `${idsRepetidos} registro(s) con id repetido` : 'Pedidos, clientes, envases y turnos sin repetir' }
-    ];
-    return { ok: controles.every(c => c.ok), controles };
-  });
-
-  alertasPendientesCount = computed(() => {
-    return this.state.pedidos.filter(p => p.tieneAlertaDeuda || p.incidencia?.tipo === 'pendiente').length;
-  });
+  alertasPendientesCount = computed(() => this.state.pedidos.filter(p => p.tieneAlertaDeuda || p.incidencia?.tipo === 'pendiente').length);
 
   retirosPendientesCliente(clienteId: string) {
     return this.state.registrosEnvases
@@ -665,24 +272,78 @@ class AppStore {
       .reduce((acc, r) => acc + r.cantidad, 0);
   }
 
-  // ==========================================================================
-  // Acciones del administrativo (Tarea #48)
-  // ==========================================================================
   buscarClientes(termino: string) {
     if (!termino.trim()) return [];
     const t = termino.toLowerCase();
     return this.state.clientes.filter(c =>
-      c.nombre.toLowerCase().includes(t) ||
-      c.telefono.includes(t) ||
-      c.direccion.toLowerCase().includes(t)
-    );
+      c.nombre.toLowerCase().includes(t) || c.telefono.includes(t) || c.direccion.toLowerCase().includes(t));
   }
 
   obtenerHistorialCliente(clienteId: string) {
     return this.state.clientes.find(c => c.id === clienteId);
   }
 
-  crearPedido(datos: {
+  // Retiro abierto (aún no realizado) para un cliente
+  retiroAbierto(clienteId: string) {
+    return this.state.pedidos.find(p => p.tipo === 'retiro' && p.clienteId === clienteId &&
+      ['pagado', 'programado', 'en_despacho', 'ausente'].includes(p.estado));
+  }
+
+  /** Otro pedido del mismo cliente ya planificado ese día en un turno abierto (para preferir ese furgón). */
+  pedidoMismoDestino(pedido: Pedido, fecha: string) {
+    const clave = claveTexto(`${pedido.direccion}|${pedido.comuna}`);
+    for (const t of this.state.turnos) {
+      if (t.fecha !== fecha || t.estado === 'finalizado') continue;
+      const otro = (this.state.paradas[t.id] ?? []).find(p => p.id !== pedido.id &&
+        (p.clienteId === pedido.clienteId || claveTexto(`${p.direccion}|${p.comuna}`) === clave));
+      if (otro) return { turno: t, pedido: otro };
+    }
+    return undefined;
+  }
+
+  // ==========================================================================
+  // Recorrido de cada turno en bodega (PBI 70)
+  // ==========================================================================
+
+  /** Calcula el recorrido más rápido de un turno en bodega (sale y vuelve a la bodega) y lo guarda. */
+  async optimizarRuta(turnoId: string) {
+    const turno = this.state.turnos.find(t => t.id === turnoId);
+    const paradas = this.state.paradas[turnoId] ?? [];
+    if (!turno || turno.estado !== 'preparacion' || !paradas.length) return;
+    const firma = `${turnoId}:${paradas.map(p => p.id).sort().join(',')}`;
+    if (this.rutasEnCalculo.has(firma)) return;
+    this.rutasEnCalculo.add(firma);
+    try {
+      const r = await optimizarOrden(BODEGA_CENTRAL, paradas.map(p => ({ id: p.id, coords: p.coords ?? geocodificarSimulado(p.direccion, p.comuna) })));
+      await api(`/turns/${turnoId}/route`, 'POST', { orden: r.orden.map(idNum), km: Math.round(r.km * 100) / 100, minutos: Math.round(r.minutos * 100) / 100, fuente: r.fuente });
+      await this.recargar().catch(() => undefined);
+    } catch {
+      /* 409: las paradas cambiaron mientras se calculaba; la próxima lectura lo recalcula */
+    } finally {
+      this.rutasEnCalculo.delete(firma);
+    }
+  }
+
+  // Turnos en bodega sin recorrido guardado (recién planificados o modificados)
+  private async optimizarPendientes() {
+    if (this.state.modoOffline) return;
+    for (const t of this.state.turnos) {
+      if (t.estado === 'preparacion' && !t.ordenParadas && (this.state.paradas[t.id] ?? []).length) {
+        await this.optimizarRuta(t.id);
+      }
+    }
+  }
+
+  /** Orden de visita ajustado a mano por el planificador. */
+  async ordenarParadasManual(turnoId: string, pedidosIds: string[]) {
+    await this.enviar(`/turns/${turnoId}/route`, { orden: pedidosIds.map(idNum), fuente: 'manual' });
+  }
+
+  // ==========================================================================
+  // Acciones del administrativo
+  // ==========================================================================
+
+  async crearPedido(datos: {
     clienteId?: string;
     nombre: string;
     telefono: string;
@@ -691,419 +352,190 @@ class AppStore {
     cantidadBidones: number;
     tipoProducto: string;
     medioPago: MedioPago;
-  }) {
+  }): Promise<Pedido> {
     const telefono = normalizarTelefono(datos.telefono) ?? datos.telefono.trim();
-    let cliente = this.state.clientes.find(c => c.id === datos.clienteId || c.telefono === telefono);
-    if (!cliente) {
-      cliente = {
-        id: nuevoId('cli'),
-        nombre: datos.nombre.trim(),
-        telefono,
-        direccion: datos.direccion.trim(),
-        comuna: datos.comuna.trim(),
-        coords: geocodificarSimulado(datos.direccion, datos.comuna),
-        deudaEnvases: 0
-      };
-      this.state.clientes.push(cliente);
-    } else {
-      // Actualiza la ficha si la secretaría corrigió la dirección
-      if (cliente.direccion !== datos.direccion.trim() || cliente.comuna !== datos.comuna.trim()) {
-        cliente.direccion = datos.direccion.trim();
-        cliente.comuna = datos.comuna.trim();
-        cliente.coords = geocodificarSimulado(cliente.direccion, cliente.comuna);
-      }
+    const direccion = datos.direccion.trim();
+    const comuna = datos.comuna.trim();
+    const cliente = this.state.clientes.find(c => c.id === datos.clienteId) ??
+      this.state.clientes.find(c => digitos(c.telefono) === digitos(telefono));
+    let clienteId = cliente ? idNum(cliente.id) : 0;
+    if (!clienteId) {
+      const nuevo = await api('/clients', 'POST', { nombre: datos.nombre.trim(), telefono: telefono.replace(/\s/g, '') });
+      clienteId = nuevo.id_cliente;
     }
-
-    const precioUnitario = 3500;
-    const recargo = recargoDelivery(cliente.comuna);
-    const total = datos.cantidadBidones * precioUnitario + recargo;
-    const ultimo = Math.max(100, ...this.state.pedidos.map(p => Number(/^PED-(\d+)$/.exec(p.codigo)?.[1] ?? 0)));
-    const codigo = `PED-${ultimo + 1}`;
-
-    const nuevoPedido: Pedido = {
-      id: nuevoId('ped'),
-      codigo,
-      clienteId: cliente.id,
-      clienteNombre: cliente.nombre,
-      telefono: cliente.telefono,
-      direccion: cliente.direccion,
-      comuna: cliente.comuna,
-      coords: cliente.coords ?? geocodificarSimulado(cliente.direccion, cliente.comuna),
-      cantidadBidones: datos.cantidadBidones,
-      tipoProducto: datos.tipoProducto,
-      precioUnitario,
-      recargoDelivery: recargo,
-      total,
-      estado: 'pendiente_pago',
-      medioPago: datos.medioPago,
-      fechaCreacion: ahoraISO(),
-      promesaEntrega: 'Mañana',
-      tieneAlertaDeuda: cliente.deudaEnvases > 0,
-      deudaEnvasesPendiente: cliente.deudaEnvases
-    };
-
-    if (datos.medioPago === 'webpay') {
-      nuevoPedido.linkWebpay = `https://webpay.transbank.cl/p/tx-${Math.floor(1000 + Math.random() * 9000)}`;
+    // Reutiliza la dirección si ya existe para el cliente; si cambió, queda la nueva como principal
+    const existente = (this.datosApi.direcciones ?? []).find((d: Row) => d.id_cliente === clienteId && d.activo !== false &&
+      claveTexto([d.calle, d.numero].filter(Boolean).join(' ')) === claveTexto(direccion) && claveTexto(d.comuna) === claveTexto(comuna));
+    let direccionId = existente?.id_direccion;
+    if (!direccionId) {
+      const coords = geocodificarSimulado(direccion, comuna);
+      const d = await api('/addresses', 'POST', { id_cliente: clienteId, calle: direccion, numero: '', comuna, latitud: coords.lat, longitud: coords.lng });
+      direccionId = d.id_direccion;
     }
-
-    this.state.pedidos.unshift(nuevoPedido);
-    this.registrarActividad(`Nuevo pedido ${codigo} de ${cliente.nombre} (${datos.cantidadBidones} bidones).`, 'panel');
-
-    // Actualizar último pedido en cliente para futuro prellenado
-    cliente.ultimoPedido = {
-      cantidadBidones: datos.cantidadBidones,
-      tipoProducto: datos.tipoProducto,
-      fecha: hoyISO()
-    };
-
-    this.sincronizarInventario();
-    return nuevoPedido;
+    const pedido = await this.enviar('/orders', {
+      id_cliente: clienteId,
+      id_direccion: direccionId,
+      cantidad: datos.cantidadBidones,
+      tipo_producto: datos.tipoProducto,
+      medio_preferido: datos.medioPago === 'webpay' ? 'WEBPAY' : 'TRANSFERENCIA',
+      con_recargo: true
+    });
+    return this.state.pedidos.find(p => p.id === String(pedido.id_pedido)) ?? ({ codigo: `PED-${pedido.id_pedido}` } as Pedido);
   }
 
+  // Registra el pago por el saldo pendiente y lo confirma (libera el pedido a planificación)
+  private async pagar(pedidoId: string, medio: 'WEBPAY' | 'TRANSFERENCIA', comprobante?: string) {
+    const fila = (this.datosApi.pedidos ?? []).find((o: Row) => String(o.id_pedido) === pedidoId);
+    if (!fila) throw new Error('Pedido no encontrado');
+    const pedido = this.state.pedidos.find(p => p.id === pedidoId)!;
+    const saldo = pedido.total - Number(fila.pagado ?? 0);
+    if (saldo <= 0) return;
+    const pago = await api('/payments', 'POST', { id_pedido: idNum(pedidoId), medio, monto: saldo, comprobante, evento: event() });
+    await this.enviar(`/payments/${pago.id_pago}/validate`, { estado: 'CONFIRMADO' });
+  }
+
+  // Webpay real pendiente de Transbank (bug 95): se registra como simulación identificada
   simularPagoWebpay(pedidoId: string) {
-    const pedido = this.state.pedidos.find(p => p.id === pedidoId);
-    if (pedido) {
-      pedido.estado = 'pagado';
-      this.registrarActividad(`Pago Webpay confirmado: ${pedido.codigo}.`, 'panel', 'exito');
-      this.guardarEnLocalStorage();
-    }
+    return this.pagar(pedidoId, 'WEBPAY');
   }
 
-  async iniciarPagoWebpayReal(pedidoId: string, montoPedido: number) {
-    try {
-      const respuesta = await fetch('/api/payments', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id_pedido: pedidoId,
-          medio: 'WEBPAY',
-          monto: montoPedido
-        }),
-      });
-
-      if (!respuesta.ok) {
-        throw new Error('Error al conectar con el servidor de pagos');
-      }
-
-      const data = await respuesta.json();
-
-      if (data.url_webpay) {
-        window.location.href = data.url_webpay;
-      } else {
-        console.error('El servidor no retornó un link válido de Webpay.');
-      }
-    } catch (error) {
-      console.error('Error al iniciar el pago con Webpay:', error);
-    }
-  }
-
-  // Todas las transferencias se abonan a la cuenta única de la empresa (sin rotación entre cuentas)
+  // Todas las transferencias se abonan a la cuenta activa de la empresa
   validarTransferenciaManual(pedidoId: string, archivoComprobante = 'comprobante_transferencia.jpg') {
-    const pedido = this.state.pedidos.find(p => p.id === pedidoId);
-    if (!pedido) return;
-
-    pedido.estado = 'pagado';
-    pedido.comprobanteTransferencia = archivoComprobante;
-    pedido.cuentaBancariaId = this.cuentaActiva.value.id;
-
-    this.registrarActividad(`Transferencia validada: ${pedido.codigo}.`, 'panel', 'exito');
-    this.guardarEnLocalStorage();
+    return this.pagar(pedidoId, 'TRANSFERENCIA', archivoComprobante);
   }
 
-  /**
-   * Planifica un pedido pagado en un furgón y un día (o lo mueve de turno mientras siga en bodega).
-   * La capacidad diaria del furgón (N_max) no se puede superar. Los llenos salen de bodega recién al cargar.
-   */
-  asignarPedido(pedidoId: string, vehiculoId: string, fecha: string) {
-    const pedido = this.state.pedidos.find(p => p.id === pedidoId);
-    const vehiculo = this.vehiculo(vehiculoId);
-    if (!pedido || !vehiculo) return;
-    if (pedido.estado !== 'pagado' && pedido.estado !== 'programado') {
-      throw new Error('Solo se pueden planificar pedidos pagados que aún no salen a ruta.');
-    }
+  // Cliente con envases no retornados: el administrativo autoriza con o sin retorno (no suma stock)
+  autorizarPedido(pedidoId: string, decision: 'CON_RETORNO' | 'SIN_RETORNO', motivo: string) {
+    return this.enviar(`/orders/${pedidoId}/authorize`, { decision, motivo });
+  }
+
+  /** Planifica un pedido pagado en un furgón y un día (o lo mueve mientras su turno siga en bodega). */
+  async asignarPedido(pedidoId: string, vehiculoId: string, fecha: string) {
     if (fecha < hoyISO()) throw new Error('No se puede planificar en un día que ya pasó.');
-
-    const anterior = this.turnoDePedido(pedidoId);
-    if (anterior && anterior.estado !== 'preparacion') throw new Error(`${pedido.codigo} ya salió a ruta y no se puede mover.`);
-
-    let turno = this.turnoDe(vehiculoId, fecha);
-    if (turno && turno === anterior) return;
-    if (turno && turno.estado !== 'preparacion') {
-      throw new Error(`${nombreCorto(vehiculo)} ya ${turno.estado === 'en_ruta' ? 'salió a ruta' : 'cerró su ruta'} ese día. Elige otro furgón o día.`);
-    }
-
-    // Un domicilio, un furgón por día: no se manda un segundo furgón a la misma dirección
-    const mismoDestino = this.pedidoMismoDestino(pedido, fecha);
-    if (mismoDestino && mismoDestino.turno.vehiculoId !== vehiculoId) {
-      const otroVehiculo = this.vehiculo(mismoDestino.turno.vehiculoId);
-      throw new Error(`${pedido.clienteNombre} ya tiene ${mismoDestino.pedido.codigo} en ${otroVehiculo ? nombreCorto(otroVehiculo) : 'otro furgón'} ese día. Asígnalo al mismo furgón para no ir dos veces a la misma dirección.`);
-    }
-
-    const carga = turno ? this.cargaPlanificada(turno) : 0;
-    const capacidad = turno?.capacidadMax ?? vehiculo.capacidadMax;
-    if (carga + pedido.cantidadBidones > capacidad) {
-      throw new Error(`${nombreCorto(vehiculo)} ya lleva ${carga}/${capacidad} ese día: no caben ${pedido.cantidadBidones} bidones más.`);
-    }
-
-    if (!turno) {
-      this.state.turnos.push({
-        id: idTurno(vehiculoId, fecha),
-        fecha,
-        turno: 'Mañana',
-        vehiculoId,
-        choferNombre: vehiculo.choferAsignado,
-        pedidosIds: [],
-        capacidadMax: vehiculo.capacidadMax,
-        botellonesCargados: 0,
-        estado: 'preparacion'
-      });
-      turno = this.state.turnos[this.state.turnos.length - 1];
-    }
-
-    if (anterior) anterior.pedidosIds = anterior.pedidosIds.filter(id => id !== pedidoId);
-    turno.pedidosIds.push(pedidoId);
-    this.reoptimizar(anterior);
-    this.reoptimizar(turno);
-    pedido.estado = 'programado';
-    pedido.promesaEntrega = fecha === hoyISO() ? 'Hoy' : `Programado ${fecha.slice(8, 10)}-${fecha.slice(5, 7)}`;
-    this.registrarActividad(`${pedido.codigo} ${anterior ? 'movido' : 'planificado'} en ${nombreCorto(vehiculo)} para el ${fecha.slice(8, 10)}-${fecha.slice(5, 7)}.`, 'panel');
-    this.sincronizarInventario();
+    await this.enviar(`/orders/${pedidoId}/plan`, { vehiculo_id: idNum(vehiculoId), fecha });
   }
 
   // Devuelve un pedido planificado a la cola "por planificar"
   desasignarPedido(pedidoId: string) {
-    const pedido = this.state.pedidos.find(p => p.id === pedidoId);
-    const turno = this.turnoDePedido(pedidoId);
-    if (!pedido || !turno) return;
-    if (turno.estado !== 'preparacion') throw new Error(`${pedido.codigo} ya salió a ruta y no se puede quitar.`);
-    turno.pedidosIds = turno.pedidosIds.filter(id => id !== pedidoId);
-    this.reoptimizar(turno);
-    pedido.estado = 'pagado';
-    pedido.promesaEntrega = 'Por planificar';
-    this.registrarActividad(`${pedido.codigo} vuelve a pedidos por planificar.`, 'panel');
-    this.sincronizarInventario();
+    return this.enviar(`/orders/${pedidoId}/unplan`);
   }
 
-  // Atajo: planifica para hoy en el primer furgón con cupo
-  asignarPedidoADespacho(pedidoId: string) {
+  // Atajo: planifica para hoy en el primer furgón con cupo (primero el que ya va a ese domicilio)
+  async asignarPedidoADespacho(pedidoId: string): Promise<Vehiculo> {
     const hoy = hoyISO();
-    const errores: string[] = [];
     const pedido = this.state.pedidos.find(p => p.id === pedidoId);
-    // Si el cliente ya tiene un pedido hoy, se prueba primero ese mismo furgón
     const preferido = pedido ? this.pedidoMismoDestino(pedido, hoy)?.turno.vehiculoId : undefined;
-    const vehiculos = this.state.vehiculos.filter(x => x.activo)
+    const vehiculos = this.state.vehiculos.filter(v => v.activo)
       .sort((a, b) => Number(b.id === preferido) - Number(a.id === preferido));
+    const errores: string[] = [];
     for (const v of vehiculos) {
       try {
-        this.asignarPedido(pedidoId, v.id, hoy);
-        if (this.turnoDePedido(pedidoId)?.vehiculoId === v.id) return v;
+        await api(`/orders/${pedidoId}/plan`, 'POST', { vehiculo_id: idNum(v.id), fecha: hoy });
+        await this.recargar().catch(() => undefined);
+        return v;
       } catch (err) {
-        errores.push((err as Error).message);
+        if (!(err instanceof ApiError) || err.status !== 409) throw err;
+        errores.push(err.message);
       }
     }
     throw new Error(`Ningún furgón tiene cupo hoy. ${errores.join(' ')}`);
   }
 
-  // Capacidad diaria del furgón (N_max); no puede quedar bajo lo ya planificado
-  cambiarCapacidadVehiculo(vehiculoId: string, nuevaCapacidad: number) {
-    const vehiculo = this.vehiculo(vehiculoId);
-    if (!vehiculo || !Number.isInteger(nuevaCapacidad) || nuevaCapacidad < 1) return;
-    const excedido = this.state.turnos.find(t =>
-      t.vehiculoId === vehiculoId && t.estado === 'preparacion' && this.cargaPlanificada(t) > nuevaCapacidad);
-    if (excedido) {
-      throw new Error(`El ${excedido.fecha.slice(8, 10)}-${excedido.fecha.slice(5, 7)} ya hay ${this.cargaPlanificada(excedido)} bidones planificados en este furgón.`);
-    }
-    vehiculo.capacidadMax = nuevaCapacidad;
-    this.state.turnos.forEach(t => {
-      if (t.vehiculoId === vehiculoId && t.estado !== 'finalizado') t.capacidadMax = nuevaCapacidad;
+  // Capacidad diaria del furgón (N_max); el servidor impide dejarla bajo lo planificado
+  async cambiarCapacidadVehiculo(vehiculoId: string, nuevaCapacidad: number) {
+    const v = this.vehiculo(vehiculoId);
+    if (!v || !Number.isInteger(nuevaCapacidad) || nuevaCapacidad < 1) throw new Error('Capacidad inválida');
+    await this.enviar(`/vehicles/${vehiculoId}`, { patente: v.patente, modelo: v.modelo, capacidad: nuevaCapacidad }, 'PATCH');
+  }
+
+  // Ausencia: volver hoy (sigue en la ruta) o reprogramar (vuelve a "por planificar" y los llenos a bodega)
+  reprogramarAusente(pedidoId: string, cuando: 'hoy' | 'manana') {
+    return this.enviar(`/orders/${pedidoId}/retry`, { cuando });
+  }
+
+  /** Parada solo de retiro para recoger los envases pendientes de un cliente. Devuelve su código. */
+  async programarRetiro(clienteId: string) {
+    const r = await this.enviar('/orders/retrieval', { id_cliente: idNum(clienteId) });
+    return `RET-${r.id_pedido}`;
+  }
+
+  // Embotellación en planta: vacíos sanitizados pasan a llenos (solo administrador)
+  sanitizarYRecargar(cantidad = 20) {
+    return this.enviar('/inventory/0/fill', { cantidad, evento: event() });
+  }
+
+  // El chofer informa la rotura; la oficina la clasifica a la bodega de rotos
+  clasificarRotura(reporteId: string) {
+    return this.enviar(`/inventory/${reporteId}/classify`);
+  }
+
+  // Exclusivo administrador: baja física de rotos tras revisión y eliminación
+  autorizarBajaRotoAdmin(cantidad = 1) {
+    const origen = this.state.rotosEnBodegaDeRotos >= cantidad ? 'ROTOS' : 'BODEGA';
+    return this.enviar('/inventory/0/writeoff', {
+      cantidad, origen, revisado: true, eliminado: true,
+      motivo: 'Inspección física y eliminación autorizadas por el administrador', evento: event()
     });
-    this.registrarActividad(`Capacidad diaria de ${nombreCorto(vehiculo)}: ${nuevaCapacidad} bidones.`, 'panel');
-    this.guardarEnLocalStorage();
+  }
+
+  // Exclusivo administrador: baja de envase no retornado tras 60 días (queda marca en ficha)
+  darDeBajaNoRetornado(registroId: string) {
+    return this.enviar(`/returns/${registroId}/writeoff`, { evidencia: 'Revisión del administrador: 60 días sin devolución' });
+  }
+
+  marcarNotificacionLeida(notificacionId: string) {
+    return this.enviar(`/notifications/${notificacionId}/read`);
+  }
+
+  // Cierre de la ruta en bodega central (lo puede hacer el chofer o la oficina)
+  async liquidarRetornoFurgonCentral(turnoId: string) {
+    const r = await this.accionChofer(`/turns/${turnoId}/close`, {}, { turnoId, estadoTurno: 'finalizado' });
+    return { vaciosRecolectados: Number(r?.vacios ?? 0), llenosNoEntregados: Number(r?.llenos ?? 0), pendiente: !r };
   }
 
   // ==========================================================================
-  // Acciones del chofer (Tarea #49 / PBI 71)
+  // Acciones del chofer (funcionan sin señal)
   // ==========================================================================
 
   // El chofer confirma la carga física: los llenos salen de bodega y suben al furgón
-  iniciarRuta(turnoId: string) {
+  async iniciarRuta(turnoId: string) {
     const turno = this.state.turnos.find(t => t.id === turnoId);
     if (!turno || turno.estado !== 'preparacion') return;
     if (turno.fecha !== hoyISO()) throw new Error('Solo se puede iniciar la ruta del día.');
-
-    const pedidos = this.state.pedidos.filter(p => turno.pedidosIds.includes(p.id) && p.estado === 'programado');
-    if (!pedidos.length) throw new Error('El turno no tiene paradas para iniciar.');
-    const llenos = pedidos.reduce((acc, p) => acc + llenosDe(p), 0);
-    if (this.state.inventario.llenosCentral < llenos) {
-      throw new Error(`Faltan llenos en bodega: se necesitan ${llenos} y hay ${this.state.inventario.llenosCentral}.`);
-    }
-
-    this.state.inventario.llenosCentral -= llenos;
-    turno.botellonesCargados = llenos;
-    pedidos.forEach(p => { p.estado = 'en_despacho'; });
-    turno.estado = 'en_ruta';
-    this.registrarActividad(`${turno.choferNombre} confirmó la carga (${llenos} bidones) e inició la ruta.`, 'chofer', 'exito');
-    this.sincronizarInventario();
+    if (!(this.state.paradas[turnoId] ?? []).length) throw new Error('El turno no tiene paradas para iniciar.');
+    await this.accionChofer(`/turns/${turnoId}/start`, {}, { turnoId, estadoTurno: 'en_ruta' });
   }
 
-  confirmarEntregaChofer(pedidoId: string, retirados?: number) {
-    const pedido = this.state.pedidos.find(p => p.id === pedidoId);
-    if (!pedido) return;
-
-    if (esRetiro(pedido)) {
-      const n = this.registrarRetiroChofer(pedidoId, retirados ?? pedido.retiroEnvases);
-      pedido.retiroRealizado = n;
-      pedido.estado = 'entregado';
-      pedido.cantidadEntregada = 0;
-      pedido.envasesNoDevueltos = 0;
-      if (pedido.incidencia?.tipo === 'ausente') pedido.incidencia.resuelto = true;
-      if (n === 0) this.registrarActividad(`Retiro en ${pedido.clienteNombre}: no había envases para recoger.`, 'chofer', 'alerta');
-      this.sincronizarInventario();
-      return;
+  private parada(pedidoId: string) {
+    for (const [turnoId, paradas] of Object.entries(this.state.paradas)) {
+      const p = paradas.find(x => x.id === pedidoId && ['en_despacho', 'ausente', 'programado'].includes(x.estado));
+      if (p) return { turnoId, p };
     }
+    throw new Error('Parada no encontrada en tu ruta');
+  }
 
-    // Entrega normal: lleno entregado, vacío recibido (los envases a bordo no cambian)
-    pedido.estado = 'entregado';
-    pedido.cantidadEntregada = pedido.cantidadBidones;
-    pedido.envasesNoDevueltos = 0;
-    if (pedido.incidencia?.tipo === 'ausente') pedido.incidencia.resuelto = true;
-    this.registrarActividad(`Entregado a ${pedido.clienteNombre} (${pedido.codigo}).`, 'chofer', 'exito');
-
-    this.sincronizarInventario();
+  // Entrega normal (lleno por vacío) o cierre de una parada de retiro con los envases recogidos
+  confirmarEntregaChofer(pedidoId: string, retirados?: number) {
+    const { turnoId, p } = this.parada(pedidoId);
+    const body = p.tipo === 'retiro'
+      ? { vacios: retirados ?? p.retiroEnvases ?? 0 }
+      : { entregados: p.cantidadBidones, vacios: p.cantidadBidones };
+    return this.accionChofer(`/stops/${p.paradaId}/deliver`, body, { turnoId, pedidoId, estadoParada: 'entregado' });
   }
 
   /**
    * Cierre de una parada de entrega con lo que el chofer confirmó por separado:
-   * - recibió menos vacíos que los entregados: la diferencia queda pendiente de devolución del cliente;
-   * - recibió más: el excedente se descuenta de lo que el cliente debía de entregas anteriores.
+   * - recibió menos vacíos que los entregados: la diferencia queda pendiente de devolución;
+   * - recibió más: el excedente salda envases que el cliente debía de entregas anteriores.
    */
   confirmarVisitaChofer(pedidoId: string, vaciosRecibidos: number) {
-    const pedido = this.state.pedidos.find(p => p.id === pedidoId);
-    if (!pedido || esRetiro(pedido)) return;
-    const cantidad = pedido.cantidadBidones;
-    const maximo = cantidad + this.retirosPendientesCliente(pedido.clienteId);
-    const recibidos = Math.min(Math.max(0, Math.round(vaciosRecibidos)), maximo);
-
-    if (recibidos < cantidad) {
-      const faltan = cantidad - recibidos;
-      this.reportarIncidenciaChofer(pedidoId, 'pendiente',
-        `Entregó ${cantidad}, recibió ${recibidos} vacío(s): ${faltan} quedan pendientes de devolución.`, { cantidad: faltan });
-      return;
-    }
-    if (recibidos > cantidad) this.registrarRetiroChofer(pedidoId, recibidos - cantidad);
-    this.confirmarEntregaChofer(pedidoId);
-  }
-
-  /**
-   * Retiro de envases pendientes de entregas anteriores.
-   * Resuelve la alerta activa una sola vez, conservando el registro como historial.
-   */
-  registrarRetiroChofer(pedidoId: string, cantidad?: number) {
-    const pedido = this.state.pedidos.find(p => p.id === pedidoId);
-    const turno = this.turnoDePedido(pedidoId);
-    if (!pedido || !turno) return 0;
-
-    const registros = this.state.registrosEnvases
-      .filter(r => r.clienteId === pedido.clienteId && r.estado === 'pendiente')
-      .sort((a, b) => a.fechaOrigen.localeCompare(b.fechaOrigen));
-    const adeudados = registros.reduce((acc, r) => acc + r.cantidad, 0);
-    let porRetirar = Math.min(Math.max(0, cantidad ?? adeudados), adeudados);
-    const total = porRetirar;
-
-    for (const r of registros) {
-      if (porRetirar <= 0) break;
-      if (r.cantidad <= porRetirar) {
-        porRetirar -= r.cantidad;
-        r.estado = 'retirado';
-        r.fechaResolucion = ahoraISO();
-      } else {
-        // Retiro parcial de este registro: lo retirado queda como historial y el resto sigue pendiente con su fecha
-        this.state.registrosEnvases.push({
-          ...r, id: nuevoId('env'), cantidad: porRetirar, estado: 'retirado', fechaResolucion: ahoraISO()
-        });
-        r.cantidad -= porRetirar;
-        porRetirar = 0;
-      }
-    }
-
-    // Los vacíos retirados suben al furgón
-    turno.botellonesCargados += total;
-    if (total > 0) {
-      const quedan = adeudados - total;
-      this.registrarActividad(`Retirados ${total} envase(s) de ${pedido.clienteNombre}${quedan ? `; quedan ${quedan} pendiente(s)` : ''}.`, 'chofer', 'exito');
-    }
-    // Sin deuda pendiente, un retiro aún no planificado o en bodega ya no hace falta
-    if (adeudados - total === 0) this.cancelarRetirosSinDeuda(pedido.clienteId, pedidoId);
-    this.sincronizarInventario();
-    return total;
-  }
-
-  private cancelarRetirosSinDeuda(clienteId: string, exceptoId?: string) {
-    this.state.pedidos
-      .filter(p => esRetiro(p) && p.clienteId === clienteId && p.id !== exceptoId && (p.estado === 'pagado' || p.estado === 'programado'))
-      .forEach(p => {
-        const turno = this.turnoDePedido(p.id);
-        if (turno) {
-          turno.pedidosIds = turno.pedidosIds.filter(id => id !== p.id);
-          this.reoptimizar(turno);
-        }
-        p.estado = 'cancelado';
-        this.registrarActividad(`${p.codigo} cancelado: ${p.clienteNombre} ya devolvió sus envases.`, 'panel');
-      });
-  }
-
-  // Retiro abierto (aún no realizado) para un cliente
-  retiroAbierto(clienteId: string) {
-    return this.state.pedidos.find(p => esRetiro(p) && p.clienteId === clienteId &&
-      ['pagado', 'programado', 'en_despacho', 'ausente'].includes(p.estado));
-  }
-
-  /**
-   * Programa una parada solo de retiro para recoger los envases pendientes de un cliente,
-   * aunque no haya hecho un pedido nuevo. Queda "por planificar" en el calendario.
-   */
-  programarRetiro(clienteId: string) {
-    const cliente = this.state.clientes.find(c => c.id === clienteId);
-    if (!cliente) return;
-    const adeudados = this.retirosPendientesCliente(clienteId);
-    if (adeudados <= 0) throw new Error(`${cliente.nombre} no tiene envases pendientes.`);
-    const abierto = this.retiroAbierto(clienteId);
-    if (abierto) throw new Error(`${cliente.nombre} ya tiene el retiro ${abierto.codigo} programado.`);
-
-    const ultimo = Math.max(0, ...this.state.pedidos.map(p => Number(/^RET-(\d+)$/.exec(p.codigo)?.[1] ?? 0)));
-    const codigo = `RET-${String(ultimo + 1).padStart(3, '0')}`;
-    const origen = this.state.registrosEnvases
-      .filter(r => r.clienteId === clienteId && r.estado === 'pendiente')
-      .map(r => r.pedidoCodigo).join(', ');
-    this.state.pedidos.unshift({
-      id: nuevoId('ret'),
-      codigo,
-      tipo: 'retiro',
-      retiroEnvases: adeudados,
-      clienteId: cliente.id,
-      clienteNombre: cliente.nombre,
-      telefono: cliente.telefono,
-      direccion: cliente.direccion,
-      comuna: cliente.comuna,
-      coords: cliente.coords ?? geocodificarSimulado(cliente.direccion, cliente.comuna),
-      cantidadBidones: 0,
-      tipoProducto: 'Retiro de envases vacíos',
-      precioUnitario: 0,
-      recargoDelivery: 0,
-      total: 0,
-      estado: 'pagado', // sin cobro: queda directamente por planificar
-      medioPago: 'transferencia',
-      fechaCreacion: ahoraISO(),
-      promesaEntrega: 'Por planificar (retiro)',
-      pedidoOrigenCodigo: origen,
-      tieneAlertaDeuda: true,
-      deudaEnvasesPendiente: adeudados
-    });
-    this.registrarActividad(`${codigo}: retiro de ${adeudados} envase(s) de ${cliente.nombre} queda por planificar.`, 'panel');
-    this.sincronizarInventario();
-    return codigo;
+    const { turnoId, p } = this.parada(pedidoId);
+    const cantidad = p.cantidadBidones;
+    const recibidos = Math.max(0, Math.round(vaciosRecibidos));
+    const body = recibidos <= cantidad
+      ? { entregados: cantidad, vacios: recibidos }
+      : { entregados: cantidad, vacios: cantidad, retiros: Math.min(recibidos - cantidad, this.retirosPendientesCliente(p.clienteId)) };
+    return this.accionChofer(`/stops/${p.paradaId}/deliver`, body, { turnoId, pedidoId, estadoParada: 'entregado' });
   }
 
   reportarIncidenciaChofer(
@@ -1112,258 +544,127 @@ class AppStore {
     detalle: string,
     opciones: { cantidad?: number; aceptacionCliente?: boolean } = {}
   ) {
-    const pedido = this.state.pedidos.find(p => p.id === pedidoId);
-    const turno = this.turnoDePedido(pedidoId);
-    if (!pedido || !turno) return;
-    // Una parada ya cerrada no admite una segunda incidencia (evita duplicar rotos o deudas)
-    if (pedido.estado === 'entregado' || pedido.estado === 'parcial') return;
-
-    if (tipo === 'roto' && !opciones.aceptacionCliente) {
-      throw new Error('La entrega parcial requiere informar al cliente y registrar su aceptación.');
+    const { turnoId, p } = this.parada(pedidoId);
+    const cantidad = p.cantidadBidones;
+    if (tipo === 'ausente') {
+      return this.accionChofer(`/stops/${p.paradaId}/deliver`, { ausente: true }, { turnoId, pedidoId, estadoParada: 'ausente' });
     }
-
-    pedido.incidencia = {
-      tipo,
-      detalle,
-      fecha: new Date().toLocaleTimeString('es-CL'),
-      resuelto: false
-    };
-
-    if (tipo === 'pendiente') {
-      // Se entregó el agua pero el cliente no devolvió el vacío -> registro con fecha en ficha cliente
-      const n = Math.min(Math.max(1, opciones.cantidad ?? 1), pedido.cantidadBidones);
-      pedido.estado = 'entregado';
-      pedido.cantidadEntregada = pedido.cantidadBidones;
-      pedido.envasesNoDevueltos = n;
-      turno.botellonesCargados = Math.max(0, turno.botellonesCargados - n);
-      this.state.registrosEnvases.push({
-        id: nuevoId('env'),
-        clienteId: pedido.clienteId,
-        clienteNombre: pedido.clienteNombre,
-        pedidoCodigo: pedido.codigo,
-        cantidad: n,
-        fechaOrigen: hoyISO(),
-        estado: 'pendiente'
-      });
-    } else if (tipo === 'ausente') {
-      // Cliente no estaba -> no se entrega y sigue en furgón; el administrativo coordina el regreso
-      pedido.estado = 'ausente';
-    } else if (tipo === 'roto') {
-      // Fisurado en furgón -> entrega parcial aceptada; merma física entra a bodega de rotos
-      const k = Math.min(Math.max(1, opciones.cantidad ?? 1), pedido.cantidadBidones);
-      pedido.estado = 'parcial';
-      pedido.aceptacionParcial = true;
-      pedido.cantidadEntregada = pedido.cantidadBidones - k;
-      pedido.envasesNoDevueltos = 0;
-      turno.botellonesCargados = Math.max(0, turno.botellonesCargados - k);
-      this.registrarRotura(pedido, k, detalle);
+    if (tipo === 'roto') {
+      if (!opciones.aceptacionCliente) throw new Error('La entrega parcial requiere informar al cliente y registrar su aceptación.');
+      const k = Math.min(Math.max(1, opciones.cantidad ?? 1), cantidad);
+      return this.accionChofer(`/stops/${p.paradaId}/deliver`, {
+        entregados: cantidad - k, rotos: k, vacios: cantidad - k, aceptacion_parcial: true, detalle
+      }, { turnoId, pedidoId, estadoParada: 'parcial' });
     }
-
-    const textos = {
-      pendiente: `${pedido.clienteNombre} no devolvió ${pedido.envasesNoDevueltos} envase(s).`,
-      ausente: `Cliente ausente: ${pedido.clienteNombre}. Coordinar regreso.`,
-      roto: `Entrega parcial a ${pedido.clienteNombre}: ${pedido.cantidadEntregada} de ${pedido.cantidadBidones} (botellón roto).`
-    };
-    this.registrarActividad(textos[tipo], 'chofer', tipo === 'pendiente' ? 'alerta' : 'error');
-
-    this.sincronizarInventario();
+    const n = Math.min(Math.max(1, opciones.cantidad ?? 1), cantidad);
+    return this.accionChofer(`/stops/${p.paradaId}/deliver`, { entregados: cantidad, vacios: cantidad - n }, { turnoId, pedidoId, estadoParada: 'entregado' });
   }
 
-  // Ausencia: volver hoy (sigue en la ruta) o reprogramar (vuelve a "por planificar" y los llenos a bodega)
-  reprogramarAusente(pedidoId: string, cuando: 'hoy' | 'manana') {
-    const pedido = this.state.pedidos.find(p => p.id === pedidoId);
-    const turno = this.turnoDePedido(pedidoId);
-    if (!pedido || !turno || pedido.estado !== 'ausente') return;
-
-    if (pedido.incidencia) pedido.incidencia.resuelto = true;
-
-    this.registrarActividad(`${pedido.clienteNombre}: reintento ${cuando === 'hoy' ? 'hoy' : 'en otro día'}.`, 'panel');
-    if (cuando === 'hoy') {
-      pedido.estado = 'en_despacho';
-      pedido.promesaEntrega = 'Hoy (reintento)';
-    } else {
-      pedido.estado = 'pagado';
-      pedido.promesaEntrega = 'Por planificar (reprogramado)';
-      turno.pedidosIds = turno.pedidosIds.filter(id => id !== pedidoId);
-      turno.botellonesCargados = Math.max(0, turno.botellonesCargados - llenosDe(pedido));
-      this.state.inventario.llenosCentral += llenosDe(pedido);
-    }
-    this.sincronizarInventario();
-  }
-
-  // Saldo de un parcial: queda por planificar con el pago original (sin nuevo cobro)
-  programarSaldoParcial(pedidoId: string) {
-    const original = this.state.pedidos.find(p => p.id === pedidoId);
-    if (!original || original.estado !== 'parcial' || original.saldoProgramado) return;
-
-    const saldo = original.cantidadBidones - (original.cantidadEntregada ?? original.cantidadBidones);
-    if (saldo <= 0) return;
-
-    original.saldoProgramado = true;
-    this.registrarActividad(`Saldo de ${original.codigo} (${saldo}) queda por planificar.`, 'panel');
-    this.state.pedidos.unshift({
-      ...clonar(original),
-      id: nuevoId('ped'),
-      codigo: `${original.codigo}-S`,
-      cantidadBidones: saldo,
-      recargoDelivery: 0,
-      total: 0,
-      estado: 'pagado',
-      fechaCreacion: ahoraISO(),
-      promesaEntrega: 'Por planificar (saldo pagado)',
-      pedidoOrigenCodigo: original.codigo,
-      incidencia: undefined,
-      cantidadEntregada: undefined,
-      envasesNoDevueltos: undefined,
-      aceptacionParcial: undefined,
-      saldoProgramado: undefined,
-      linkWebpay: undefined
-    });
-    this.sincronizarInventario();
-  }
-
-  // Liquidación del furgón al retornar a bodega central (descarga de vacíos y cuadratura física)
-  liquidarRetornoFurgonCentral(turnoId: string, origen: Actividad['origen'] = 'panel') {
-    const turno = this.state.turnos.find(t => t.id === turnoId);
-    if (!turno || turno.estado !== 'en_ruta') return { vaciosRecolectados: 0, llenosNoEntregados: 0 };
-    const pedidos = this.state.pedidos.filter(p => turno.pedidosIds.includes(p.id));
-
-    // Llenos que vuelven: ausentes y paradas no visitadas
-    const pedidosConLlenos = pedidos.filter(p => p.estado === 'ausente' || p.estado === 'en_despacho');
-    const llenosNoEntregados = pedidosConLlenos.reduce((sum, p) => sum + llenosDe(p), 0);
-
-    // Todo lo demás a bordo son vacíos (intercambiados o retirados)
-    const vaciosRecolectados = Math.max(0, turno.botellonesCargados - llenosNoEntregados);
-
-    this.state.inventario.vaciosCentral += vaciosRecolectados;
-    this.state.inventario.llenosCentral += Math.min(llenosNoEntregados, turno.botellonesCargados);
-
-    // Los no entregados vuelven a "por planificar" con su pago original
-    pedidosConLlenos.forEach(p => {
-      p.estado = 'pagado';
-      p.promesaEntrega = 'Por planificar (reprogramado)';
-      if (p.incidencia) p.incidencia.resuelto = true;
-    });
-
-    // El furgón descarga por completo; el turno conserva solo las paradas realizadas como historial
-    turno.botellonesCargados = 0;
-    turno.pedidosIds = turno.pedidosIds.filter(id => !pedidosConLlenos.some(p => p.id === id));
-    turno.estado = 'finalizado';
-
-    this.registrarActividad(`Ruta de ${turno.choferNombre} cerrada en bodega: ${vaciosRecolectados} vacíos y ${llenosNoEntregados} llenos ingresados.`, origen, 'exito');
-    this.sincronizarInventario();
-    return { vaciosRecolectados, llenosNoEntregados };
-  }
-
-  // Recarga/Lavado de botellones en planta (vacíos a llenos)
-  sanitizarYRecargar(cantidad = 20) {
-    const cant = Math.min(this.state.inventario.vaciosCentral, cantidad);
-    if (cant > 0) {
-      this.state.inventario.vaciosCentral -= cant;
-      this.state.inventario.llenosCentral += cant;
-      this.sincronizarInventario();
-    }
-  }
-
-  // PBI 68: cada rotura queda registrada en bodega de rotos y genera avisos para administración y cliente
-  private registrarRotura(pedido: Pedido, cantidad: number, detalle: string) {
-    const fecha = ahoraISO();
-    const evento = nuevoId('rot');
-    this.state.roturasBodega.unshift({
-      id: evento,
-      pedidoId: pedido.id,
-      codigoPedido: pedido.codigo,
-      clienteNombre: pedido.clienteNombre,
-      producto: pedido.tipoProducto,
-      cantidad,
-      detalle: detalle.trim() || 'Sin detalle informado.',
-      fecha,
-      estado: 'pendiente_baja'
-    });
-    const avisos: NotificacionInterna[] = [
-      {
-        id: `${evento}-administrador`,
-        tipo: 'rotura',
-        destinatario: 'administrador',
-        pedidoId: pedido.id,
-        clienteNombre: pedido.clienteNombre,
-        titulo: `Rotura informada en ${pedido.codigo}`,
-        mensaje: `Se registraron ${cantidad} botellón(es) dañado(s) en el trayecto. Detalle: ${detalle.trim() || 'sin detalle'}.`,
-        fecha,
-        leida: false
-      },
-      {
-        id: `${evento}-cliente`,
-        tipo: 'rotura',
-        destinatario: 'cliente',
-        pedidoId: pedido.id,
-        clienteNombre: pedido.clienteNombre,
-        titulo: `Novedad en tu pedido ${pedido.codigo}`,
-        mensaje: `Por un incidente en ruta, el saldo de ${cantidad} botellón(es) se entregará en el siguiente turno sin costo adicional.`,
-        fecha,
-        leida: false
+  /**
+   * Envía una acción del chofer. Sin conexión (o con el modo offline activado) queda guardada
+   * en el teléfono con su identificador de evento y se envía al reconectar.
+   */
+  private async accionChofer(path: string, body: Row, parche: ParcheLocal): Promise<Row | null> {
+    const conEvento = { ...body, evento: body.evento ?? event() };
+    const sinRed = this.state.modoOffline || (typeof navigator !== 'undefined' && !navigator.onLine);
+    if (!sinRed) {
+      try {
+        const r = await api(path, 'POST', conEvento);
+        await this.recargar().catch(() => undefined);
+        return r;
+      } catch (err) {
+        if (err instanceof ApiError) throw err; // el servidor respondió: el error es real
+        // Falló la red: se guarda para enviarla después
       }
-    ];
-    this.state.notificacionesInternas.unshift(...avisos);
-    this.state.notificacionesInternas.splice(50);
+    }
+    const item: AccionPendiente = { id: conEvento.evento, username: this.usuario, path, body: conEvento, orden: Date.now() + this.pendientes.length / 1000, parche };
+    this.pendientes.push(item);
+    try {
+      await queue.add({ id: item.id, username: item.username, path, body: { ...conEvento, __orden: item.orden, __parche: parche } });
+    } catch {
+      /* sin IndexedDB: queda en memoria mientras la app siga abierta */
+    }
+    this.state.pendientesSincronizar = this.pendientes.length;
+    this.aplicarParches();
+    return null;
   }
 
-  marcarNotificacionLeida(notificacionId: string) {
-    const aviso = this.state.notificacionesInternas.find(n => n.id === notificacionId);
-    if (!aviso || aviso.leida) return;
-    aviso.leida = true;
-    this.guardarEnLocalStorage();
+  // Recupera las acciones guardadas en el teléfono (por ejemplo, si se cerró la app sin señal)
+  private async cargarPendientes() {
+    try {
+      const items = await queue.all();
+      this.pendientes = items
+        .filter(i => i.username === this.usuario)
+        .map(i => {
+          const { __orden, __parche, ...body } = i.body as Row;
+          return { id: i.id, username: i.username, path: i.path, body, orden: Number(__orden ?? 0), parche: __parche };
+        })
+        .sort((a, b) => a.orden - b.orden);
+      this.state.pendientesSincronizar = this.pendientes.length;
+      if (this.pendientes.length && !this.state.modoOffline && navigator.onLine) void this.sincronizarPendientes();
+    } catch {
+      /* sin IndexedDB */
+    }
   }
 
-  // Exclusivo Administrador: autoriza la baja física de rotos (los más antiguos primero) sin borrar su historial
-  autorizarBajaRotoAdmin(cantidad = 1) {
-    if (!Number.isInteger(cantidad) || cantidad <= 0) return;
-    let restante = cantidad;
-    const pendientes = this.state.roturasBodega.filter(r => r.estado === 'pendiente_baja').reverse();
-    for (const rotura of pendientes) {
-      if (restante === 0) break;
-      const autorizada = Math.min(rotura.cantidad, restante);
-      if (autorizada === rotura.cantidad) {
-        rotura.estado = 'baja_definitiva';
-      } else {
-        rotura.cantidad -= autorizada;
-        this.state.roturasBodega.push({ ...rotura, id: nuevoId('rot'), cantidad: autorizada, estado: 'baja_definitiva' });
+  private aplicarParches() {
+    for (const { parche } of this.pendientes) {
+      if (!parche) continue;
+      const turno = parche.turnoId ? this.state.turnos.find(t => t.id === parche.turnoId) : undefined;
+      if (turno && parche.estadoTurno) {
+        turno.estado = parche.estadoTurno;
+        if (parche.estadoTurno === 'en_ruta') {
+          (this.state.paradas[turno.id] ?? []).forEach(p => {
+            if (p.estado === 'programado') p.estado = 'en_despacho';
+          });
+        }
       }
-      restante -= autorizada;
-      this.state.inventario.bajasDefinitivas60d += autorizada;
+      if (parche.turnoId && parche.pedidoId && parche.estadoParada) {
+        const p = (this.state.paradas[parche.turnoId] ?? []).find(x => x.id === parche.pedidoId);
+        if (p) {
+          p.estado = parche.estadoParada;
+          p.pendienteSincronizar = true;
+        }
+      }
     }
-    if (restante < cantidad) this.sincronizarInventario();
   }
 
-  // Exclusivo Administrador: baja de envase no retornado tras 60 días (queda marca en ficha)
-  darDeBajaNoRetornado(registroId: string) {
-    const reg = this.state.registrosEnvases.find(r => r.id === registroId);
-    if (!reg || reg.estado !== 'pendiente') return;
-    if (diasDesde(reg.fechaOrigen) < 60) {
-      throw new Error('Solo se puede dar de baja un envase con 60 días o más sin devolución.');
+  /** Envía en orden las acciones guardadas sin conexión. */
+  async sincronizarPendientes() {
+    if (this.state.modoOffline || !this.pendientes.length) return;
+    const errores: string[] = [];
+    while (this.pendientes.length) {
+      const item = this.pendientes[0];
+      try {
+        await api(item.path, 'POST', item.body);
+      } catch (err) {
+        if (!(err instanceof ApiError)) break; // sigue sin red: se reintenta después
+        errores.push(err.message); // el servidor la rechazó (por ejemplo, ya resuelta): se descarta
+      }
+      this.pendientes.shift();
+      await queue.remove(item.id).catch(() => undefined);
     }
-    reg.estado = 'baja';
-    reg.fechaResolucion = ahoraISO();
-    this.state.inventario.bajasDefinitivas60d += reg.cantidad;
-    if (this.retirosPendientesCliente(reg.clienteId) === 0) this.cancelarRetirosSinDeuda(reg.clienteId);
-    this.sincronizarInventario();
+    this.state.pendientesSincronizar = this.pendientes.length;
+    await this.recargar().catch(() => undefined);
+    if (errores.length) throw new Error(`Algunas acciones guardadas no se aplicaron: ${errores.join(' ')}`);
   }
 
-  resetDemoData() {
-    localStorage.removeItem(STORAGE_KEY);
-    this.state.clientes = clonar(clientesIniciales);
-    this.state.pedidos = clonar(pedidosIniciales);
-    this.state.vehiculos = clonar(vehiculosIniciales);
-    this.state.cuentasBancarias = clonar(cuentasBancariasIniciales);
-    this.state.registrosEnvases = clonar(registrosEnvasesIniciales);
-    this.state.turnos = clonar(turnosIniciales);
-    this.state.inventario = clonar(inventarioInicial);
-    this.state.roturasBodega = roturasPrevias(inventarioInicial.rotosBodega);
-    this.state.notificacionesInternas = [];
-    this.state.actividad = [];
-    this.state.stockReferencia = STOCK_REFERENCIA_INICIAL;
-    this.sincronizarInventario();
+  /** Activa o desactiva el modo sin conexión del chofer (al volver, envía lo pendiente). */
+  async cambiarModoOffline(offline: boolean) {
+    this.state.modoOffline = offline;
+    if (!offline) {
+      await this.sincronizarPendientes();
+      await this.recargar().catch(() => undefined);
+    }
   }
+
+  // Nombre corto del furgón para mensajes
+  nombreVehiculo(vehiculoId: string) {
+    const v = this.vehiculo(vehiculoId);
+    return v ? nombreCorto(v) : 'el furgón';
+  }
+
+  llenosDe = llenosDe;
 }
 
 export const appStore = new AppStore();

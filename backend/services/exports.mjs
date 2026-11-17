@@ -71,7 +71,8 @@ export async function exportOrders(db, { desde, hasta }) {
     db,
     `SELECT p.id_pedido, p.fecha_creacion, e.nombre_estado, c.nombre AS cliente, c.telefono,
             d.calle || ' ' || d.numero AS direccion, d.comuna, p.tipo_producto, p.cantidad,
-            p.entregados, p.precio_unitario, p.cantidad * p.precio_unitario AS total,
+            p.entregados, p.precio_unitario,
+            CASE WHEN p.tipo = 'retiro' THEN 0 ELSE p.cantidad * p.precio_unitario + p.recargo END AS total,
             COALESCE((SELECT SUM(monto) FROM pago
                       WHERE id_pedido = p.id_pedido AND codigo_estado = 'CONFIRMADO'), 0) AS pagado,
             p.autorizacion, p.fecha_promesa,

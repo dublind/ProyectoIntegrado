@@ -34,7 +34,7 @@ export async function notify(
 async function orderContact(db, orderId) {
   return one(
     db,
-    `SELECT p.id_pedido, p.cantidad, p.precio_unitario, c.id_cliente, c.nombre, c.telefono
+    `SELECT p.id_pedido, p.cantidad, p.precio_unitario, p.recargo, c.id_cliente, c.nombre, c.telefono
      FROM pedido p JOIN cliente c ON c.id_cliente = p.id_cliente
      WHERE p.id_pedido = $1`,
     [orderId],
@@ -52,7 +52,7 @@ export async function notifyPaymentApproved(db, orderId, paymentId) {
     pedido: o.id_pedido,
     cliente: o.id_cliente,
     mensaje:
-      `Hola ${o.nombre}, recibimos tu pago de ${money(o.cantidad * o.precio_unitario)} ` +
+      `Hola ${o.nombre}, recibimos tu pago de ${money(o.cantidad * o.precio_unitario + Number(o.recargo ?? 0))} ` +
       `por el pedido N° ${o.id_pedido} (${o.cantidad} bidón(es) de 20 litros). ` +
       'Tu pedido será entregado mañana; te avisaremos cuando salga el reparto.',
   });
@@ -112,6 +112,33 @@ export async function notifyPendingReturn(db, pendingReturn) {
     mensaje:
       `${client.nombre} quedó con ${pendingReturn.cantidad} envase(s) por retirar ` +
       `(pedido N° ${pendingReturn.pedido_id}). Se incorporará en su próximo despacho.`,
+  });
+}
+
+// PBI 68 (tarea 113): rotura en camino. Aviso interno a la oficina y mensaje al cliente.
+export async function notifyBreakage(db, report) {
+  const o = await orderContact(db, report.pedido_id);
+  await notify(db, {
+    evento: `rotura-${report.id}-interno`,
+    tipo: 'ROTURA',
+    canal: 'INTERNO',
+    destino: 'administrativo',
+    pedido: o.id_pedido,
+    cliente: o.id_cliente,
+    mensaje:
+      `Rotura informada en el pedido N° ${o.id_pedido} (${o.nombre}): ${report.cantidad} botellón(es). ` +
+      `Detalle: ${report.detalle}. Clasifica el reporte antes de cerrar la ruta.`,
+  });
+  await notify(db, {
+    evento: `rotura-${report.id}-cliente`,
+    tipo: 'ROTURA',
+    canal: 'WHATSAPP',
+    destino: o.telefono,
+    pedido: o.id_pedido,
+    cliente: o.id_cliente,
+    mensaje:
+      `Hola ${o.nombre}, por un incidente en ruta entregamos tu pedido N° ${o.id_pedido} de forma parcial. ` +
+      `El saldo de ${report.cantidad} bidón(es) se entregará en el siguiente turno sin costo adicional.`,
   });
 }
 

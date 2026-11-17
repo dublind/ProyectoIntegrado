@@ -53,7 +53,7 @@
           <span class="avisos-label">Avisos</span>
           <span v-if="avisosNoLeidos > 0" class="avisos-count">{{ avisosNoLeidos }}</span>
         </button>
-        <span class="live-pill" title="Se actualiza al instante con lo que registra el chofer">
+        <span class="live-pill" title="Se actualiza cada pocos segundos con lo que registra el chofer">
           <span class="live-dot"></span> En vivo
         </span>
         <RouterLink to="/inventario" :class="['audit-pill', { fail: !appStore.auditoria.value.ok }]"
@@ -80,24 +80,23 @@
             <button type="button" class="btn-close" aria-label="Cerrar" @click="mostrarAvisos = false">&times;</button>
           </div>
           <div class="modal-body">
-          <p class="avisos-nota">Avisos guardados en este navegador; no se envían por correo ni WhatsApp.</p>
+          <p class="avisos-nota">Avisos internos guardados en el servidor. Los mensajes a clientes salen por WhatsApp
+            cuando esté configurado.</p>
           <div v-if="appStore.state.notificacionesInternas.length" class="avisos-lista">
             <article v-for="n in appStore.state.notificacionesInternas" :key="n.id"
               :class="['aviso', { leido: n.leida }]">
               <div class="aviso-head">
                 <span :class="['badge', n.destinatario === 'administrador' ? 'badge-primary' : 'badge-warning']">
-                  Para {{ n.destinatario === 'administrador' ? 'administración' : `cliente: ${n.clienteNombre}` }}
+                  Para {{ n.destinatario === 'administrador' ? 'administración' : 'oficina' }}{{ n.clienteNombre ? ` · ${n.clienteNombre}` : '' }}
                 </span>
-                <span class="text-xs text-muted">{{ formatFechaCorta(n.fecha) }}</span>
+                <span class="text-xs text-muted">{{ n.fecha ? formatFechaCorta(n.fecha) : '' }}</span>
               </div>
               <strong>{{ n.titulo }}</strong>
               <p>{{ n.mensaje }}</p>
-              <button v-if="!n.leida" type="button" class="btn btn-secondary btn-sm"
-                @click="appStore.marcarNotificacionLeida(n.id)">Marcar como leído</button>
-              <span v-else class="text-xs text-muted">Leído</span>
+              <button type="button" class="btn btn-secondary btn-sm" @click="marcarLeido(n.id)">Marcar como leído</button>
             </article>
           </div>
-          <p v-else class="text-sm text-muted">No hay avisos de rotura.</p>
+          <p v-else class="text-sm text-muted">No hay avisos pendientes.</p>
           </div>
         </section>
       </div>
@@ -130,7 +129,15 @@ const route = useRoute();
 const mostrarAvisos = ref(false);
 const avisosNoLeidos = computed(() => appStore.state.notificacionesInternas.filter(n => !n.leida).length);
 
-// Lo que el chofer registra en su app (otra pestaña) aparece aquí al instante
+async function marcarLeido(id: string) {
+  try {
+    await appStore.marcarNotificacionLeida(id);
+  } catch (err) {
+    notificar((err as Error).message, 'error');
+  }
+}
+
+// Lo que el chofer registra en su app (en su teléfono) aparece aquí en la siguiente lectura
 appStore.alRecibirActividadRemota(nuevas => {
   nuevas.filter(a => a.origen === 'chofer').reverse().forEach(a => {
     notificar(`Chofer: ${a.texto}`, a.tipo === 'error' ? 'error' : a.tipo === 'exito' ? 'exito' : 'info', 5000);

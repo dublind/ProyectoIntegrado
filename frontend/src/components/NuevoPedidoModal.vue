@@ -130,7 +130,9 @@
 
         <div class="modal-footer">
           <button type="button" @click="emit('cerrar')" class="btn btn-secondary">Cancelar</button>
-          <button type="submit" class="btn btn-primary">Crear pedido y generar cobro</button>
+          <button type="submit" class="btn btn-primary" :disabled="guardando">
+            {{ guardando ? 'Guardando…' : 'Crear pedido y generar cobro' }}
+          </button>
         </div>
       </form>
     </div>
@@ -152,6 +154,7 @@ const emit = defineEmits<{ cerrar: [] }>();
 const gruposComunas = comunasPorTramo();
 
 const clienteSeleccionadoId = ref('');
+const guardando = ref(false);
 const form = reactive({
   clienteId: '',
   nombre: '',
@@ -233,18 +236,30 @@ async function guardar() {
     return;
   }
 
-  const pedido = appStore.crearPedido({
-    clienteId: form.clienteId || undefined,
-    nombre: form.nombre,
-    telefono: form.telefono,
-    direccion: form.direccion,
-    comuna: form.comuna,
-    cantidadBidones: form.cantidadBidones,
-    tipoProducto: form.tipoProducto,
-    medioPago: form.medioPago
-  });
-  notificar(`Pedido ${pedido.codigo} creado. Promesa al cliente: "Su pedido será entregado mañana".`, 'exito');
-  emit('cerrar');
+  if (guardando.value) return;
+  guardando.value = true;
+  try {
+    const pedido = await appStore.crearPedido({
+      clienteId: form.clienteId || undefined,
+      nombre: form.nombre,
+      telefono: form.telefono,
+      direccion: form.direccion,
+      comuna: form.comuna,
+      cantidadBidones: form.cantidadBidones,
+      tipoProducto: form.tipoProducto,
+      medioPago: form.medioPago
+    });
+    if (pedido.requiereAutorizacion) {
+      notificar(`Pedido ${pedido.codigo} creado. El cliente tiene envases no retornados: lo autoriza el administrativo.`, 'info', 6000);
+    } else {
+      notificar(`Pedido ${pedido.codigo} creado. Promesa al cliente: "Su pedido será entregado mañana".`, 'exito');
+    }
+    emit('cerrar');
+  } catch (err) {
+    notificar((err as Error).message, 'error', 6000);
+  } finally {
+    guardando.value = false;
+  }
 }
 </script>
 
