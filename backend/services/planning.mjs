@@ -267,6 +267,11 @@ export async function saveRoute(db, user, turn, body) {
     'Las paradas del turno cambiaron; vuelve a calcular la ruta',
     409,
   );
+  fail(body.fuente && !['calles', 'aproximada', 'manual'].includes(body.fuente), 'Fuente inválida');
+  // Una optimización que empezó antes del ajuste manual no debe reemplazarlo al terminar.
+  if (turn.ruta_fuente === 'manual' && body.fuente !== 'manual') {
+    return { ok: true, conservada: true };
+  }
   const number = (v, max) => {
     if (v === undefined || v === null) return null;
     const n = Number(v);
@@ -280,7 +285,6 @@ export async function saveRoute(db, user, turn, body) {
       orderId,
     ]);
   }
-  fail(body.fuente && !['calles', 'aproximada', 'manual'].includes(body.fuente), 'Fuente inválida');
   await db.query('UPDATE turno SET ruta_km=$1,ruta_min=$2,ruta_fuente=$3 WHERE id=$4', [
     number(body.km, 100000),
     number(body.minutos, 100000),

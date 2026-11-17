@@ -205,6 +205,24 @@ test('Orden de visita guardado (PBI 70): se respeta en la ruta y se invalida al 
   );
   assert.equal(Number(state.turnos.find((t) => t.id === turn.id).ruta_km), 12.5);
 
+  // Una optimización geográfica que termina tarde no sobrescribe el orden manual.
+  await call(`/turns/${turn.id}/route`, 'POST', {
+    orden: [...manual].reverse(),
+    km: 9,
+    minutos: 30,
+    fuente: 'aproximada',
+  });
+  const preserved = await stateOf();
+  assert.deepEqual(
+    preserved.paradasTurnos
+      .filter((s) => s.turno_id === turn.id)
+      .map((s) => s.pedido_id),
+    manual,
+  );
+  const preservedTurn = preserved.turnos.find((t) => t.id === turn.id);
+  assert.equal(preservedTurn.ruta_fuente, 'manual');
+  assert.equal(Number(preservedTurn.ruta_km), 12.5);
+
   // Un pedido nuevo en el turno borra el orden guardado
   const extra = await newOrder(1);
   await pay(extra.p);
