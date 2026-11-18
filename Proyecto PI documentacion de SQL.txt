@@ -1,0 +1,330 @@
+-- ============================================================================
+-- MODELO DE BASE DE DATOS - PyME DISTRIBUCION DE AGUA PURIFICADA (MVP)
+-- Alcance: CLIENTE, DIRECCION, PEDIDO, ESTADO_PEDIDO, HISTORIAL_ESTADO_PEDIDO
+-- Motor objetivo: Oracle Database (probar en Oracle SQL Developer)
+-- ============================================================================
+--
+-- ESTRATEGIA DE CLAVES PRIMARIAS
+-- --------------------------------------------------------------------------
+-- Se usa IDENTITY (GENERATED ALWAYS AS IDENTITY) en lugar de SEQUENCE +
+-- TRIGGER manual. Motivo: IDENTITY es la forma estandar en Oracle 12c+
+-- para autogenerar PKs numericas sin necesidad de mantener un trigger
+-- BEFORE INSERT por tabla (menos codigo, menos riesgo de error, y evita
+-- el problema clasico de que alguien inserte manualmente un ID que choque
+-- con la secuencia). Si el proyecto necesitara compatibilidad con Oracle
+-- 11g o versiones anteriores, la alternativa seria SEQUENCE + TRIGGER;
+-- no es el caso aqui, se asume Oracle 12c en adelante (SQL Developer actual).
+-- ============================================================================
+
+
+-- ============================================================================
+-- 5. SCRIPT DDL (orden pensado para respetar dependencias de FK)
+-- ============================================================================
+
+-- Limpieza previa (opcional, comentar si es la primera ejecucion)
+-- DROP TABLE HISTORIAL_ESTADO_PEDIDO CASCADE CONSTRAINTS;
+-- DROP TABLE PEDIDO CASCADE CONSTRAINTS;
+-- DROP TABLE ESTADO_PEDIDO CASCADE CONSTRAINTS;
+-- DROP TABLE DIRECCION CASCADE CONSTRAINTS;
+-- DROP TABLE CLIENTE CASCADE CONSTRAINTS;
+
+
+-- ----------------------------------------------------------------------------
+-- CLIENTE
+-- ----------------------------------------------------------------------------
+CREATE TABLE CLIENTE (
+    ID_CLIENTE      NUMBER          GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
+    RUT             VARCHAR2(12),
+    NOMBRE          VARCHAR2(100)   NOT NULL,
+    TELEFONO        VARCHAR2(20),
+    EMAIL           VARCHAR2(100),
+    FECHA_CREACION  TIMESTAMP       DEFAULT SYSTIMESTAMP NOT NULL,
+    CONSTRAINT PK_CLIENTE PRIMARY KEY (ID_CLIENTE)
+    -- UNIQUE sobre RUT: pendiente de validacion de negocio.
+    -- Si se confirma que el RUT debe ser unico, descomentar:
+    -- , CONSTRAINT UQ_CLIENTE_RUT UNIQUE (RUT)
+);
+
+COMMENT ON TABLE CLIENTE IS 'Clientes de la PyME de distribucion de agua purificada';
+
+
+-- ----------------------------------------------------------------------------
+-- DIRECCION (1 cliente -> N direcciones)
+-- ----------------------------------------------------------------------------
+CREATE TABLE DIRECCION (
+    ID_DIRECCION    NUMBER          GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
+    ID_CLIENTE      NUMBER          NOT NULL,
+    ETIQUETA        VARCHAR2(30),
+    CALLE           VARCHAR2(150)   NOT NULL,
+    NUMERO          VARCHAR2(20),
+    COMUNA          VARCHAR2(80),
+    CIUDAD          VARCHAR2(80),
+    ACTIVO          CHAR(1)         DEFAULT 'S' NOT NULL,
+    FECHA_CREACION  TIMESTAMP       DEFAULT SYSTIMESTAMP NOT NULL,
+    CONSTRAINT PK_DIRECCION PRIMARY KEY (ID_DIRECCION),
+    CONSTRAINT FK_DIRECCION_CLIENTE FOREIGN KEY (ID_CLIENTE)
+        REFERENCES CLIENTE (ID_CLIENTE),
+    CONSTRAINT CK_DIRECCION_ACTIVO CHECK (ACTIVO IN ('S','N')),
+    -- Ancla para la FK compuesta desde PEDIDO: garantiza que (ID_DIRECCION, ID_CLIENTE)
+    -- sea una combinacion unica que Oracle puede referenciar como FK compuesta.
+    CONSTRAINT UQ_DIRECCION_CLIENTE UNIQUE (ID_DIRECCION, ID_CLIENTE)
+);
+
+COMMENT ON TABLE DIRECCION IS 'Direcciones asociadas a un cliente; un cliente puede tener varias';
+COMMENT ON COLUMN DIRECCION.ACTIVO IS 'S = activa, N = dada de baja (no se elimina fisicamente)';
+
+
+-- ----------------------------------------------------------------------------
+-- ESTADO_PEDIDO (catalogo)
+-- ----------------------------------------------------------------------------
+CREATE TABLE ESTADO_PEDIDO (
+    ID_ESTADO       NUMBER          GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
+    NOMBRE_ESTADO   VARCHAR2(30)    NOT NULL,
+    ORDEN           NUMBER,
+    CONSTRAINT PK_ESTADO_PEDIDO PRIMARY KEY (ID_ESTADO),
+    CONSTRAINT UQ_ESTADO_NOMBRE UNIQUE (NOMBRE_ESTADO)
+);
+
+COMMENT ON TABLE ESTADO_PEDIDO IS 'Catalogo de estados posibles de un pedido (propuesta, sujeta a validacion)';
+
+
+-- ----------------------------------------------------------------------------
+-- PEDIDO (1 cliente -> N pedidos; cada pedido usa una direccion del MISMO cliente)
+-- ----------------------------------------------------------------------------
+CREATE TABLE PEDIDO (
+    ID_PEDIDO               NUMBER      GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
+    ID_CLIENTE               NUMBER      NOT NULL,
+    ID_DIRECCION_ENTREGA     NUMBER      NOT NULL,
+    ID_ESTADO_ACTUAL         NUMBER      NOT NULL,
+    FECHA_CREACION           TIMESTAMP   DEFAULT SYSTIMESTAMP NOT NULL,
+    CONSTRAINT PK_PEDIDO PRIMARY KEY (ID_PEDIDO),
+    CONSTRAINT FK_PEDIDO_ESTADO FOREIGN KEY (ID_ESTADO_ACTUAL)
+        REFERENCES ESTADO_PEDIDO (ID_ESTADO),
+    -- FK COMPUESTA: obliga a que la direccion pertenezca al mismo cliente del pedido.
+    -- Esta es la pieza clave para la regla "un pedido no puede asociarse a una
+    -- direccion de otro cliente" sin necesitar un trigger.
+    CONSTRAINT FK_PEDIDO_DIRECCION_CLIENTE FOREIGN KEY (ID_DIRECCION_ENTREGA, ID_CLIENTE)
+        REFERENCES DIRECCION (ID_DIRECCION, ID_CLIENTE)
+    -- NOTA: deliberadamente NO se agrega UNIQUE sobre ID_CLIENTE ni sobre
+    -- ninguna combinacion de columnas. Ver seccion 7 (prueba de duplicacion)
+    -- para la explicacion de por que no se define una regla de unicidad de
+    -- negocio en este momento.
+);
+
+COMMENT ON TABLE PEDIDO IS 'Pedidos realizados por un cliente; multiples pedidos por cliente son validos';
+
+
+-- ----------------------------------------------------------------------------
+-- HISTORIAL_ESTADO_PEDIDO (1 pedido -> N cambios de estado)
+-- ----------------------------------------------------------------------------
+CREATE TABLE HISTORIAL_ESTADO_PEDIDO (
+    ID_HISTORIAL    NUMBER          GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
+    ID_PEDIDO       NUMBER          NOT NULL,
+    ID_ESTADO       NUMBER          NOT NULL,
+    FECHA_CAMBIO    TIMESTAMP       DEFAULT SYSTIMESTAMP NOT NULL,
+    RESPONSABLE     VARCHAR2(60),
+    OBSERVACION     VARCHAR2(300),
+    CONSTRAINT PK_HISTORIAL PRIMARY KEY (ID_HISTORIAL),
+    CONSTRAINT FK_HISTORIAL_PEDIDO FOREIGN KEY (ID_PEDIDO)
+        REFERENCES PEDIDO (ID_PEDIDO),
+    CONSTRAINT FK_HISTORIAL_ESTADO FOREIGN KEY (ID_ESTADO)
+        REFERENCES ESTADO_PEDIDO (ID_ESTADO)
+);
+
+COMMENT ON TABLE HISTORIAL_ESTADO_PEDIDO IS 'Traza completa de cambios de estado de cada pedido';
+
+
+-- Indices adicionales para consultas frecuentes (las FK no crean indice
+-- automaticamente en Oracle, a diferencia de otros motores)
+CREATE INDEX IX_DIRECCION_CLIENTE          ON DIRECCION (ID_CLIENTE);
+CREATE INDEX IX_PEDIDO_CLIENTE             ON PEDIDO (ID_CLIENTE);
+CREATE INDEX IX_PEDIDO_ESTADO_ACTUAL       ON PEDIDO (ID_ESTADO_ACTUAL);
+CREATE INDEX IX_HISTORIAL_PEDIDO           ON HISTORIAL_ESTADO_PEDIDO (ID_PEDIDO);
+CREATE INDEX IX_HISTORIAL_ESTADO           ON HISTORIAL_ESTADO_PEDIDO (ID_ESTADO);
+
+
+-- ============================================================================
+-- 6. DATOS DE PRUEBA
+-- ============================================================================
+
+-- Catalogo de estados (propuesta; nombres pueden ajustarse tras validar con el cliente)
+INSERT INTO ESTADO_PEDIDO (NOMBRE_ESTADO, ORDEN) VALUES ('Pendiente', 1);
+INSERT INTO ESTADO_PEDIDO (NOMBRE_ESTADO, ORDEN) VALUES ('Confirmado', 2);
+INSERT INTO ESTADO_PEDIDO (NOMBRE_ESTADO, ORDEN) VALUES ('En preparacion', 3);
+INSERT INTO ESTADO_PEDIDO (NOMBRE_ESTADO, ORDEN) VALUES ('En reparto', 4);
+INSERT INTO ESTADO_PEDIDO (NOMBRE_ESTADO, ORDEN) VALUES ('Entregado', 5);
+INSERT INTO ESTADO_PEDIDO (NOMBRE_ESTADO, ORDEN) VALUES ('Cancelado', 6);
+
+-- Cliente 1, con dos direcciones (domicilio y trabajo) -> demuestra
+-- "un cliente puede tener varias direcciones"
+INSERT INTO CLIENTE (RUT, NOMBRE, TELEFONO, EMAIL)
+VALUES ('11111111-1', 'Maria Perez', '+56911111111', 'maria.perez@correo.cl');
+
+INSERT INTO DIRECCION (ID_CLIENTE, ETIQUETA, CALLE, NUMERO, COMUNA, CIUDAD)
+VALUES (1, 'Domicilio', 'Av. Las Condes', '1234', 'Las Condes', 'Santiago');
+
+INSERT INTO DIRECCION (ID_CLIENTE, ETIQUETA, CALLE, NUMERO, COMUNA, CIUDAD)
+VALUES (1, 'Trabajo', 'Av. Apoquindo', '4501', 'Las Condes', 'Santiago');
+
+-- Cliente 2, con una direccion, para tener datos de otro cliente y poder
+-- probar que un pedido NO puede usar la direccion de otro cliente
+INSERT INTO CLIENTE (RUT, NOMBRE, TELEFONO, EMAIL)
+VALUES ('22222222-2', 'Juan Soto', '+56922222222', 'juan.soto@correo.cl');
+
+INSERT INTO DIRECCION (ID_CLIENTE, ETIQUETA, CALLE, NUMERO, COMUNA, CIUDAD)
+VALUES (2, 'Domicilio', 'Calle Los Alerces', '55', 'Nunoa', 'Santiago');
+
+COMMIT;
+
+-- Tres pedidos DISTINTOS para el Cliente 1 (mismo cliente, diferentes
+-- direcciones y momentos) -> demuestra "un cliente puede tener varios
+-- pedidos" y "dos pedidos del mismo cliente pueden ser diferentes"
+-- Pedido 1: lunes, a domicilio (direccion 1)
+INSERT INTO PEDIDO (ID_CLIENTE, ID_DIRECCION_ENTREGA, ID_ESTADO_ACTUAL)
+VALUES (1, 1, 1); -- estado inicial: Pendiente
+
+-- Pedido 2: miercoles, a domicilio (direccion 1) -- mismo cliente, misma
+-- direccion, pero es un pedido legitimamente distinto (distinto ID_PEDIDO,
+-- distinta fecha/hora de creacion)
+INSERT INTO PEDIDO (ID_CLIENTE, ID_DIRECCION_ENTREGA, ID_ESTADO_ACTUAL)
+VALUES (1, 1, 1);
+
+-- Pedido 3: viernes, al trabajo (direccion 2)
+INSERT INTO PEDIDO (ID_CLIENTE, ID_DIRECCION_ENTREGA, ID_ESTADO_ACTUAL)
+VALUES (1, 2, 1);
+
+COMMIT;
+
+-- Historial de cambios de estado para el Pedido 1 (simula el avance
+-- Pendiente -> Confirmado -> En preparacion -> En reparto -> Entregado)
+INSERT INTO HISTORIAL_ESTADO_PEDIDO (ID_PEDIDO, ID_ESTADO, RESPONSABLE, OBSERVACION)
+VALUES (1, 1, 'sistema', 'Pedido creado');
+
+INSERT INTO HISTORIAL_ESTADO_PEDIDO (ID_PEDIDO, ID_ESTADO, RESPONSABLE)
+VALUES (1, 2, 'operador1');
+
+INSERT INTO HISTORIAL_ESTADO_PEDIDO (ID_PEDIDO, ID_ESTADO, RESPONSABLE)
+VALUES (1, 3, 'bodega1');
+
+INSERT INTO HISTORIAL_ESTADO_PEDIDO (ID_PEDIDO, ID_ESTADO, RESPONSABLE)
+VALUES (1, 4, 'repartidor1');
+
+INSERT INTO HISTORIAL_ESTADO_PEDIDO (ID_PEDIDO, ID_ESTADO, RESPONSABLE, OBSERVACION)
+VALUES (1, 5, 'repartidor1', 'Entregado sin novedad');
+
+-- Actualizar el estado actual en PEDIDO para reflejar el ultimo estado del historial
+-- (en produccion esto deberia hacerse dentro de un unico procedimiento
+-- transaccional junto con el INSERT en el historial; ver seccion de
+-- "ventajas y riesgos" en la respuesta principal)
+UPDATE PEDIDO SET ID_ESTADO_ACTUAL = 5 WHERE ID_PEDIDO = 1;
+
+COMMIT;
+
+
+-- ============================================================================
+-- 7. PRUEBA DE DUPLICACION
+-- ============================================================================
+--
+-- No existe informacion suficiente para definir de forma segura que
+-- constituye un "pedido duplicado" de negocio. Dos pedidos del mismo
+-- cliente, mismo dia, incluso misma direccion, PUEDEN ser legitimos
+-- (ej: el cliente llama dos veces porque olvido pedir algo la primera vez).
+-- Por eso NO se crea ninguna restriccion UNIQUE de negocio sobre PEDIDO;
+-- el unico identificador de unicidad es la PK tecnica ID_PEDIDO.
+--
+-- Preguntas que el dueno de la PyME debe responder antes de poder definir
+-- una regla UNIQUE segura (candidatos, TODOS pendientes de validacion):
+--   a) (ID_CLIENTE, ID_DIRECCION_ENTREGA, fecha del dia) -- ¿es invalido
+--      que un cliente pida dos veces a la misma direccion el mismo dia?
+--   b) Un identificador externo del pedido (ej. numero de orden telefonica,
+--      folio de WhatsApp) que el sistema aun no captura.
+--   c) Una ventana de tiempo corta (ej. "no permitir dos pedidos del mismo
+--      cliente en menos de X minutos") -- esto ya no es un UNIQUE simple,
+--      seria logica de aplicacion o un trigger, y depende de un valor de
+--      negocio (los X minutos) que hoy no esta definido.
+--
+-- A continuacion, ejemplos que ilustran el comportamiento actual:
+
+-- (a) Pedido valido para el Cliente 1
+INSERT INTO PEDIDO (ID_CLIENTE, ID_DIRECCION_ENTREGA, ID_ESTADO_ACTUAL)
+VALUES (1, 1, 1);
+
+-- (b) Otro pedido valido para el mismo cliente, mismo dia, misma direccion.
+-- Con el modelo actual esto SE PERMITE, porque no hay evidencia de que
+-- sea un error -- podria ser un pedido adicional legitimo.
+INSERT INTO PEDIDO (ID_CLIENTE, ID_DIRECCION_ENTREGA, ID_ESTADO_ACTUAL)
+VALUES (1, 1, 1);
+
+COMMIT;
+
+-- (c) Intento que SI debe fallar por integridad referencial (no por
+-- "duplicado", sino porque la direccion 3 no existe o no pertenece al
+-- cliente indicado): descomentar para probar el rechazo.
+-- INSERT INTO PEDIDO (ID_CLIENTE, ID_DIRECCION_ENTREGA, ID_ESTADO_ACTUAL)
+-- VALUES (1, 3, 1);  -- ID_DIRECCION_ENTREGA=3 no existe -> ORA-02291
+
+-- (d) Intento que SI debe fallar porque la direccion 3 (del Cliente 2)
+-- se intenta usar para un pedido del Cliente 1: la FK compuesta lo impide.
+-- INSERT INTO PEDIDO (ID_CLIENTE, ID_DIRECCION_ENTREGA, ID_ESTADO_ACTUAL)
+-- VALUES (1, 3, 1);  -- direccion 3 pertenece a ID_CLIENTE=2 -> ORA-02291
+--                     -- (no existe la combinacion (3,1) en DIRECCION)
+
+
+-- ============================================================================
+-- 8. CONSULTAS DE VALIDACION
+-- ============================================================================
+
+-- Todos los clientes
+SELECT * FROM CLIENTE ORDER BY ID_CLIENTE;
+
+-- Todas las direcciones de un cliente (ej. cliente 1)
+SELECT * FROM DIRECCION WHERE ID_CLIENTE = 1 ORDER BY ID_DIRECCION;
+
+-- Todos los pedidos de un cliente (ej. cliente 1)
+SELECT * FROM PEDIDO WHERE ID_CLIENTE = 1 ORDER BY ID_PEDIDO;
+
+-- Pedidos junto con su direccion de entrega
+SELECT p.ID_PEDIDO, p.FECHA_CREACION, d.ETIQUETA, d.CALLE, d.NUMERO, d.COMUNA
+FROM PEDIDO p
+JOIN DIRECCION d ON d.ID_DIRECCION = p.ID_DIRECCION_ENTREGA
+ORDER BY p.ID_PEDIDO;
+
+-- Estado actual de un pedido (ej. pedido 1)
+SELECT p.ID_PEDIDO, e.NOMBRE_ESTADO AS ESTADO_ACTUAL
+FROM PEDIDO p
+JOIN ESTADO_PEDIDO e ON e.ID_ESTADO = p.ID_ESTADO_ACTUAL
+WHERE p.ID_PEDIDO = 1;
+
+-- Historial completo de estados de un pedido (ej. pedido 1), en orden cronologico
+SELECT h.ID_HISTORIAL, e.NOMBRE_ESTADO, h.FECHA_CAMBIO, h.RESPONSABLE, h.OBSERVACION
+FROM HISTORIAL_ESTADO_PEDIDO h
+JOIN ESTADO_PEDIDO e ON e.ID_ESTADO = h.ID_ESTADO
+WHERE h.ID_PEDIDO = 1
+ORDER BY h.FECHA_CAMBIO;
+
+-- Clientes que tienen multiples direcciones
+SELECT c.ID_CLIENTE, c.NOMBRE, COUNT(*) AS CANTIDAD_DIRECCIONES
+FROM CLIENTE c
+JOIN DIRECCION d ON d.ID_CLIENTE = c.ID_CLIENTE
+GROUP BY c.ID_CLIENTE, c.NOMBRE
+HAVING COUNT(*) > 1
+ORDER BY CANTIDAD_DIRECCIONES DESC;
+
+-- Clientes que tienen multiples pedidos
+SELECT c.ID_CLIENTE, c.NOMBRE, COUNT(*) AS CANTIDAD_PEDIDOS
+FROM CLIENTE c
+JOIN PEDIDO p ON p.ID_CLIENTE = c.ID_CLIENTE
+GROUP BY c.ID_CLIENTE, c.NOMBRE
+HAVING COUNT(*) > 1
+ORDER BY CANTIDAD_PEDIDOS DESC;
+
+-- Deteccion de POSIBLES pedidos duplicados (heuristica, NO una regla de
+-- negocio confirmada): mismo cliente, misma direccion, mismo dia calendario.
+-- Sirve solo como reporte para revision humana, no para bloquear inserciones.
+SELECT p.ID_CLIENTE, p.ID_DIRECCION_ENTREGA, TRUNC(p.FECHA_CREACION) AS DIA,
+       COUNT(*) AS CANTIDAD_PEDIDOS_MISMO_DIA,
+       LISTAGG(p.ID_PEDIDO, ', ') WITHIN GROUP (ORDER BY p.ID_PEDIDO) AS IDS_PEDIDO
+FROM PEDIDO p
+GROUP BY p.ID_CLIENTE, p.ID_DIRECCION_ENTREGA, TRUNC(p.FECHA_CREACION)
+HAVING COUNT(*) > 1
+ORDER BY CANTIDAD_PEDIDOS_MISMO_DIA DESC;
